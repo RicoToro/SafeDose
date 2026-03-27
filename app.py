@@ -6,43 +6,95 @@ import time
 import google.generativeai as genai
 
 # ==========================================
-# CONFIGURAÇÃO DA PÁGINA E CSS PREMIUM (SaaS) - CORRIGIDO
+# CONFIGURAÇÃO DA PÁGINA E CSS PREMIUM (SaaS)
 # ==========================================
 st.set_page_config(page_title="SafeDose Pro", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
-    /* 1. Esconde as marcas do Streamlit */
+    /* Esconde as marcas do Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* 2. Fundo geral Clínico (Gelo/SaaS) */
+    /* Fundo geral Clínico da área de trabalho */
     .stApp {
         background-color: #f4f7f6;
     }
 
-    /* 3. Barra Lateral Profissional (Azul Escuro Médico) */
+    /* ========================================= */
+    /* BARRA LATERAL (Design Dark Moderno)       */
+    /* ========================================= */
     [data-testid="stSidebar"] {
-        background-color: #1e2a38;
-        border-right: none;
+        background-color: #1e293b !important; /* Azul/Cinza bem escuro e elegante */
+        border-right: 1px solid #334155 !important;
     }
     
-    /* Pinta os textos da sidebar de branco, MAS exclui os botões e inputs */
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] p {
+    /* Força todos os textos da barra lateral a serem claros */
+    [data-testid="stSidebar"] * {
         color: #f8f9fa !important;
     }
 
-    /* FORÇA o texto dos botões normais a ser escuro (Resolve o texto invisível!) */
-    .stButton>button p {
-        color: #3c4858 !important;
+    /* BOTÕES DA BARRA LATERAL (Efeito Ghost - Não são mais brancos!) */
+    [data-testid="stSidebar"] .stButton>button {
+        background-color: rgba(255, 255, 255, 0.05) !important; /* Fundo quase transparente */
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;  /* Borda sutil */
+        color: #ffffff !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stSidebar"] .stButton>button p {
+        color: #ffffff !important; /* Garante o texto branco no botão */
+    }
+    [data-testid="stSidebar"] .stButton>button:hover {
+        background-color: rgba(255, 255, 255, 0.15) !important;
+        border-color: #4CAF50 !important; /* Fica verde suave ao passar o mouse */
     }
 
-    /* FORÇA o texto dos botões primários (azuis) a ser branco */
-    button[kind="primary"] p {
+    /* CAIXAS DE INPUT E SELEÇÃO NA BARRA LATERAL (Escuras) */
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div,
+    [data-testid="stSidebar"] div[data-baseweb="input"] > div {
+        background-color: rgba(0, 0, 0, 0.25) !important; /* Fundo mais escuro que a barra */
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    }
+    [data-testid="stSidebar"] input {
         color: #ffffff !important;
     }
 
-    /* 4. Estilização das Abas (Tabs) para parecer sistema moderno */
+    /* ========================================= */
+    /* ÁREA PRINCIPAL (Clara e legível)          */
+    /* ========================================= */
+    
+    /* Botões Padrão da tela principal (Brancos com texto escuro) */
+    [data-testid="stAppViewBlockContainer"] .stButton>button {
+        background-color: #ffffff;
+        border: 1px solid #e0e6ed;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        transition: all 0.2s ease-in-out;
+    }
+    [data-testid="stAppViewBlockContainer"] .stButton>button p {
+        color: #3c4858 !important;
+        font-weight: 600;
+    }
+    [data-testid="stAppViewBlockContainer"] .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        border-color: #0056b3;
+    }
+
+    /* Botões Primários (Ação de Sucesso/Emergência em Azulão) */
+    button[kind="primary"] {
+        background: linear-gradient(135deg, #0056b3, #003d82) !important;
+        border: none !important;
+        box-shadow: 0 4px 10px rgba(0, 86, 179, 0.3) !important;
+    }
+    button[kind="primary"] p {
+        color: #ffffff !important;
+    }
+    button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #003d82, #002752) !important;
+    }
+
+    /* Estilo moderno das Abas Superiores */
     button[data-baseweb="tab"] {
         background-color: transparent !important;
         border: none !important;
@@ -55,42 +107,17 @@ st.markdown("""
     }
     button[data-baseweb="tab"][aria-selected="true"] {
         border-bottom: 3px solid #0056b3 !important;
-        color: #0056b3 !important; /* Azul Médico para a aba ativa */
+        color: #0056b3 !important;
     }
 
-    /* 5. Botões Modernos e com Sombra (Efeito Tátil) */
-    .stButton>button {
-        border-radius: 8px;
-        font-weight: 600;
-        border: 1px solid #e0e6ed;
-        background-color: #ffffff;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        transition: all 0.2s ease-in-out;
-    }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        border-color: #0056b3;
-    }
-
-    /* Botões Primários (Ação de Sucesso/Emergência) */
-    button[kind="primary"] {
-        background: linear-gradient(135deg, #0056b3, #003d82) !important;
-        border: none !important;
-        box-shadow: 0 4px 10px rgba(0, 86, 179, 0.3) !important;
-    }
-    button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #003d82, #002752) !important;
-    }
-
-    /* 6. Arredondamento e sombra nos Cards de Alertas */
+    /* Arredonda as caixas de avisos (Alertas) */
     .stAlert {
         border-radius: 12px !important;
         border: none !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important;
     }
     
-    /* 7. Destaca os valores numéricos (Métricas) */
+    /* Números de métricas grandes */
     div[data-testid="stMetricValue"] {
         font-size: 2.2rem;
         font-weight: 800;
@@ -204,7 +231,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 11.1 | UI Fix")
+    st.caption("🚀 Versão 11.2 | UI Dark Sidebar")
 
 # ==========================================
 # GESTÃO DE ABAS 
