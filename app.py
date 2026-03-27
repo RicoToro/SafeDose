@@ -51,8 +51,7 @@ st.markdown("""
 
     /* CAIXAS DE INPUT E SELEÇÃO NA BARRA LATERAL (Escuras) */
     [data-testid="stSidebar"] div[data-baseweb="select"] > div,
-    [data-testid="stSidebar"] div[data-baseweb="input"],
-    [data-testid="stSidebar"] div[data-baseweb="input"] > div {
+    [data-testid="stSidebar"] div[data-baseweb="input"] {
         background-color: rgba(0, 0, 0, 0.2) !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
         color: white !important;
@@ -65,10 +64,19 @@ st.markdown("""
         -webkit-text-fill-color: #ffffff !important;
     }
 
-    /* O fundo dos botões de + e - */
+    /* MATANDO O FUNDO BRANCO DA CAIXA DE PESO DE VEZ */
+    [data-testid="stSidebar"] div[data-testid="stNumberInputContainer"] {
+        background-color: rgba(0, 0, 0, 0.2) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 8px;
+    }
+    /* Força tudo dentro do input de número a ser transparente e não herdar fundo branco */
+    [data-testid="stSidebar"] div[data-testid="stNumberInputContainer"] * {
+        background-color: transparent !important;
+    }
+    /* Adiciona a linha sutil separando os botões de + e - */
     [data-testid="stSidebar"] div[data-testid="stNumberInputStepUp"],
     [data-testid="stSidebar"] div[data-testid="stNumberInputStepDown"] {
-        background-color: rgba(255, 255, 255, 0.1) !important;
         border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
     }
 
@@ -250,7 +258,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 11.5 | Sistema Estável")
+    st.caption("🚀 Versão 11.6 | UI Dark Final")
 
 # ==========================================
 # GESTÃO DE ABAS 
