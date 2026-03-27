@@ -51,19 +51,30 @@ st.markdown("""
 
     /* CAIXAS DE INPUT E SELEÇÃO NA BARRA LATERAL (Escuras) */
     [data-testid="stSidebar"] div[data-baseweb="select"] > div,
-    [data-testid="stSidebar"] div[data-baseweb="input"] > div,
-    [data-testid="stSidebar"] div[data-testid="stNumberInputContainer"] {
-        background-color: rgba(0, 0, 0, 0.25) !important;
+    [data-testid="stSidebar"] div[data-baseweb="input"],
+    [data-testid="stSidebar"] div[data-baseweb="input"] > div {
+        background-color: rgba(0, 0, 0, 0.2) !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: white !important;
     }
     
-    /* Garante que o texto digitado e os botões de + e - fiquem brancos */
+    /* O texto digitado dentro da caixa */
     [data-testid="stSidebar"] input {
         color: #ffffff !important;
         background-color: transparent !important;
+        -webkit-text-fill-color: #ffffff !important;
     }
-    [data-testid="stSidebar"] div[data-baseweb="input"] button {
-        background-color: transparent !important;
+
+    /* O fundo dos botões de + e - */
+    [data-testid="stSidebar"] div[data-testid="stNumberInputStepUp"],
+    [data-testid="stSidebar"] div[data-testid="stNumberInputStepDown"] {
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+    }
+
+    /* Força todos os ícones da barra (as setinhas do dropdown e o + e -) a serem brancos */
+    [data-testid="stSidebar"] svg {
+        fill: #ffffff !important;
         color: #ffffff !important;
     }
 
@@ -239,7 +250,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 11.3 | UI Dark Sidebar Fix")
+    st.caption("🚀 Versão 11.4 | UI Dark Sidebar Final")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -424,7 +435,7 @@ with aba_admin:
                                 st.error("❌ Medicamento não reconhecido nas bases consultadas.")
                             else:
                                 banco_medicamentos.update({n_med.lower().replace(' ', '_'): dados_ia})
-                                with open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
+                                open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
                                 st.success("✅ Protocolo adicionado com sucesso ao banco local!")
                                 sucesso = True
                         except Exception as e: 
