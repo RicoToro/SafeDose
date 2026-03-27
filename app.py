@@ -258,7 +258,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 11.6 | UI Dark Final")
+    st.caption("🚀 Versão 12.0 | Prompt Clinical IA")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -434,7 +434,18 @@ with aba_admin:
             if st.button("Mapear Literatura Médica", type="primary", use_container_width=True) and n_med:
                 if model:
                     with st.spinner("Analisando bulas e literatura médica..."):
-                        prompt = f"Retorne JSON puro para o medicamento {n_med}. Chaves: nome_apresentacao, vias_permitidas(lista), unidade_medida(ml/comprimido/ampola/gotas), alerta_iv, concentracao_mg_ml(float), dose_mg_kg(float ou nulo), interacoes_graves(lista principios ativos), interacoes_moderadas(lista)."
+                        # PROMPT DE FERRO ATUALIZADO AQUI
+                        prompt = f"""Atue como um farmacologista clínico. Retorne um JSON puro (sem formatação markdown) para o medicamento {n_med}.
+Chaves obrigatórias:
+- nome_apresentacao (string)
+- vias_permitidas (lista de strings)
+- unidade_medida (string: ml, comprimido, ampola ou gotas)
+- alerta_iv (string curta ou null)
+- concentracao_mg_ml (float)
+- dose_mg_kg (float ou null)
+- interacoes_graves (lista EXAUSTIVA de strings com os nomes exatos dos princípios ativos. REGRA: NUNCA use nomes de classes como 'AINEs' ou 'Anticoagulantes'. Você DEVE listar os fármacos específicos, ex: 'ibuprofeno', 'diclofenaco', 'varfarina').
+- interacoes_moderadas (lista seguindo a mesma regra acima)."""
+                        
                         res = model.generate_content(prompt).text
                         sucesso = False
                         try:
