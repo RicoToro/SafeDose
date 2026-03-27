@@ -25,7 +25,7 @@ st.markdown("""
     /* BARRA LATERAL (Design Dark Moderno)       */
     /* ========================================= */
     [data-testid="stSidebar"] {
-        background-color: #1e293b !important; /* Azul/Cinza bem escuro e elegante */
+        background-color: #1e293b !important;
         border-right: 1px solid #334155 !important;
     }
     
@@ -34,28 +34,36 @@ st.markdown("""
         color: #f8f9fa !important;
     }
 
-    /* BOTÕES DA BARRA LATERAL (Efeito Ghost - Não são mais brancos!) */
+    /* BOTÕES DA BARRA LATERAL (Efeito Ghost) */
     [data-testid="stSidebar"] .stButton>button {
-        background-color: rgba(255, 255, 255, 0.05) !important; /* Fundo quase transparente */
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;  /* Borda sutil */
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
         color: #ffffff !important;
         box-shadow: none !important;
     }
     [data-testid="stSidebar"] .stButton>button p {
-        color: #ffffff !important; /* Garante o texto branco no botão */
+        color: #ffffff !important;
     }
     [data-testid="stSidebar"] .stButton>button:hover {
         background-color: rgba(255, 255, 255, 0.15) !important;
-        border-color: #4CAF50 !important; /* Fica verde suave ao passar o mouse */
+        border-color: #4CAF50 !important;
     }
 
     /* CAIXAS DE INPUT E SELEÇÃO NA BARRA LATERAL (Escuras) */
     [data-testid="stSidebar"] div[data-baseweb="select"] > div,
-    [data-testid="stSidebar"] div[data-baseweb="input"] > div {
-        background-color: rgba(0, 0, 0, 0.25) !important; /* Fundo mais escuro que a barra */
+    [data-testid="stSidebar"] div[data-baseweb="input"] > div,
+    [data-testid="stSidebar"] div[data-testid="stNumberInputContainer"] {
+        background-color: rgba(0, 0, 0, 0.25) !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
     }
+    
+    /* Garante que o texto digitado e os botões de + e - fiquem brancos */
     [data-testid="stSidebar"] input {
+        color: #ffffff !important;
+        background-color: transparent !important;
+    }
+    [data-testid="stSidebar"] div[data-baseweb="input"] button {
+        background-color: transparent !important;
         color: #ffffff !important;
     }
 
@@ -63,7 +71,7 @@ st.markdown("""
     /* ÁREA PRINCIPAL (Clara e legível)          */
     /* ========================================= */
     
-    /* Botões Padrão da tela principal (Brancos com texto escuro) */
+    /* Botões Padrão da tela principal */
     [data-testid="stAppViewBlockContainer"] .stButton>button {
         background-color: #ffffff;
         border: 1px solid #e0e6ed;
@@ -231,7 +239,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 11.2 | UI Dark Sidebar")
+    st.caption("🚀 Versão 11.3 | UI Dark Sidebar Fix")
 
 # ==========================================
 # GESTÃO DE ABAS 
