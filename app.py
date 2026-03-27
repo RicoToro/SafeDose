@@ -6,7 +6,7 @@ import time
 import google.generativeai as genai
 
 # ==========================================
-# CONFIGURAÇÃO DA PÁGINA E CSS PREMIUM (SaaS)
+# CONFIGURAÇÃO DA PÁGINA E CSS PREMIUM (SaaS) - CORRIGIDO
 # ==========================================
 st.set_page_config(page_title="SafeDose Pro", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
@@ -26,8 +26,20 @@ st.markdown("""
         background-color: #1e2a38;
         border-right: none;
     }
-    [data-testid="stSidebar"] * {
-        color: #f8f9fa !important; /* Deixa o texto da sidebar claro */
+    
+    /* Pinta os textos da sidebar de branco, MAS exclui os botões e inputs */
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] p {
+        color: #f8f9fa !important;
+    }
+
+    /* FORÇA o texto dos botões normais a ser escuro (Resolve o texto invisível!) */
+    .stButton>button p {
+        color: #3c4858 !important;
+    }
+
+    /* FORÇA o texto dos botões primários (azuis) a ser branco */
+    button[kind="primary"] p {
+        color: #ffffff !important;
     }
 
     /* 4. Estilização das Abas (Tabs) para parecer sistema moderno */
@@ -53,20 +65,17 @@ st.markdown("""
         border: 1px solid #e0e6ed;
         background-color: #ffffff;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        color: #3c4858;
         transition: all 0.2s ease-in-out;
     }
     .stButton>button:hover {
         transform: translateY(-2px);
         box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        color: #0056b3;
         border-color: #0056b3;
     }
 
     /* Botões Primários (Ação de Sucesso/Emergência) */
     button[kind="primary"] {
         background: linear-gradient(135deg, #0056b3, #003d82) !important;
-        color: white !important;
         border: none !important;
         box-shadow: 0 4px 10px rgba(0, 86, 179, 0.3) !important;
     }
@@ -195,7 +204,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 11.0 | UI Premium")
+    st.caption("🚀 Versão 11.1 | UI Fix")
 
 # ==========================================
 # GESTÃO DE ABAS 
