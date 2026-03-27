@@ -250,7 +250,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 11.4 | UI Dark Sidebar Final")
+    st.caption("🚀 Versão 11.5 | Sistema Estável")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -435,7 +435,7 @@ with aba_admin:
                                 st.error("❌ Medicamento não reconhecido nas bases consultadas.")
                             else:
                                 banco_medicamentos.update({n_med.lower().replace(' ', '_'): dados_ia})
-                                open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
+                                with open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
                                 st.success("✅ Protocolo adicionado com sucesso ao banco local!")
                                 sucesso = True
                         except Exception as e: 
