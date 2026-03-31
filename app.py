@@ -258,7 +258,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 13.1 | Mapeamento Automático Inteligente")
+    st.caption("🚀 Versão 13.2 | Motor de IA Blindado (BR)")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -430,7 +430,7 @@ with aba_admin:
     with cad:
         with st.container(border=True):
             st.markdown("#### Importação Inteligente (IA)")
-            st.caption("ATENÇÃO: VOCÊ ESTÁ ATUANDO NO BRASIL. Considere OBRIGATORIAMENTE interações com medicamentos de altíssimo uso no país, mesmo que sejam restritos nos EUA (EXEMPLO: Dipirona/Metamizol).")
+            st.caption("Pesquise qualquer medicamento. A IA fará o mapeamento farmacológico automático.")
             
             n_med = st.text_input("Princípio Ativo ou Medicamento:")
             
@@ -440,6 +440,8 @@ with aba_admin:
                         # O "PROMPT COM ESTEROIDES" PARA DESEMPACOTAR CLASSES
                         prompt = f"""Atue como o Farmacêutico Chefe de um hospital de alta complexidade. 
 Sua tarefa é mapear o medicamento '{n_med}' e retornar APENAS um JSON PURO.
+
+ATENÇÃO: VOCÊ ESTÁ ATUANDO NO BRASIL. Considere OBRIGATORIAMENTE interações com medicamentos de altíssimo uso no país, mesmo que sejam restritos nos EUA (EXEMPLO: Dipirona/Metamizol).
 
 REGRA DE OURO PARA INTERAÇÕES: Nosso sistema cruza nomes EXATOS. Você é ESTritamente PROIBIDO de usar nomes de classes farmacológicas gerais (ex: 'AINEs', 'ISRS', 'Corticoides', 'Betabloqueadores'). 
 Se o medicamento interage com uma classe, você DEVE "desempacotar" essa classe e listar os 10 a 15 princípios ativos mais comuns dela usados no Brasil. 
