@@ -258,7 +258,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 13.0 | RAG Integrado")
+    st.caption("🚀 Versão 13.1 | Mapeamento Automático Inteligente")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -429,45 +429,47 @@ with aba_admin:
     cad, rem = st.columns(2)
     with cad:
         with st.container(border=True):
-            st.markdown("#### 📖 Extração Segura (RAG)")
-            st.caption("A IA analisará EXCLUSIVAMENTE o texto fornecido abaixo para evitar alucinações médicas.")
+            st.markdown("#### Importação Inteligente (IA)")
+            st.caption("Pesquise qualquer medicamento. A IA fará o mapeamento farmacológico automático.")
             
             n_med = st.text_input("Princípio Ativo ou Medicamento:")
-            txt_bula = st.text_area("Cole trechos da Bula (Posologia e Interações):", height=120, placeholder="Ex: Interage com Ibuprofeno, Varfarina...")
             
-            if st.button("Extrair Dados da Bula", type="primary", use_container_width=True) and n_med and txt_bula:
+            if st.button("Mapear Literatura Médica", type="primary", use_container_width=True) and n_med:
                 if model:
-                    with st.spinner("Lendo bula e extraindo evidências clínicas..."):
-                        prompt = f"""Atue como um sistema extrator de dados médicos. 
-REGRA ABSOLUTA: Baseie-se ESTRITAMENTE no texto da bula fornecido abaixo. NÃO use conhecimento externo e NÃO invente interações.
+                    with st.spinner(f"Consultando bases de dados para {n_med}..."):
+                        # O "PROMPT COM ESTEROIDES" PARA DESEMPACOTAR CLASSES
+                        prompt = f"""Atue como o Farmacêutico Chefe de um hospital de alta complexidade. 
+Sua tarefa é mapear o medicamento '{n_med}' e retornar APENAS um JSON PURO.
 
-Texto da Bula:
-\"\"\"{txt_bula}\"\"\"
+REGRA DE OURO PARA INTERAÇÕES: Nosso sistema cruza nomes EXATOS. Você é ESTritamente PROIBIDO de usar nomes de classes farmacológicas gerais (ex: 'AINEs', 'ISRS', 'Corticoides', 'Betabloqueadores'). 
+Se o medicamento interage com uma classe, você DEVE "desempacotar" essa classe e listar os 10 a 15 princípios ativos mais comuns dela usados no Brasil. 
+Exemplo: Se interage com AINEs, você não escreverá 'AINEs', mas sim: ["ibuprofeno", "diclofenaco", "cetoprofeno", "nimesulida", "naproxeno", "meloxicam", "aspirina", "celecoxibe"].
 
-Com base apenas no texto acima, retorne um JSON PURO com as chaves:
-- nome_apresentacao (string: {n_med})
-- vias_permitidas (lista de strings extraída do texto)
+Retorne o JSON com as exatas chaves:
+- nome_apresentacao (string: o nome do medicamento capitalizado)
+- vias_permitidas (lista de strings)
 - unidade_medida (string: ml, comprimido, ampola ou gotas)
-- alerta_iv (string ou null)
-- concentracao_mg_ml (float, tente extrair do texto, ou null se não achar)
+- alerta_iv (string curta de atenção ou null)
+- concentracao_mg_ml (float ou null se não for líquido)
 - dose_mg_kg (float ou null)
-- interacoes_graves (lista EXAUSTIVA de strings com os nomes EXATOS dos princípios ativos citados no texto. Converta classes como 'AINEs' para os nomes dos remédios comuns dessa classe se necessário, como 'ibuprofeno').
-- interacoes_moderadas (lista)."""
+- interacoes_graves (lista EXAUSTIVA com nomes específicos de princípios ativos, tudo em minúsculo)
+- interacoes_moderadas (lista EXAUSTIVA com nomes específicos de princípios ativos, tudo em minúsculo)."""
                         
-                        res = model.generate_content(prompt).text
-                        sucesso = False
                         try:
+                            res = model.generate_content(prompt).text
                             dados_ia = json.loads(res[res.find('{'):res.rfind('}')+1])
-                            banco_medicamentos.update({n_med.lower().replace(' ', '_'): dados_ia})
-                            with open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
-                            st.success("✅ Protocolo seguro adicionado ao banco!")
-                            sucesso = True
+                            
+                            # Verifica se a IA não devolveu um erro ou JSON vazio
+                            if "nome_apresentacao" in dados_ia:
+                                banco_medicamentos.update({n_med.lower().replace(' ', '_'): dados_ia})
+                                with open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
+                                st.success(f"✅ Protocolo do {n_med} adicionado com sucesso ao banco!")
+                                time.sleep(1.5)
+                                st.rerun()
+                            else:
+                                st.error("❌ Medicamento não encontrado com segurança nas bases.")
                         except Exception as e: 
-                            st.error(f"❌ Erro na formatação do retorno da IA.")
-                        
-                        if sucesso:
-                            time.sleep(1.5)
-                            st.rerun()
+                            st.error(f"❌ Erro de conexão com a IA ou formatação. Tente novamente.")
                 else: st.error("Serviço de IA Offline.")
     with rem:
         with st.container(border=True):
