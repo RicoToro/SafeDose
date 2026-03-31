@@ -258,7 +258,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 12.0 | Prompt Clinical IA")
+    st.caption("🚀 Versão 13.0 | RAG Integrado")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -429,39 +429,44 @@ with aba_admin:
     cad, rem = st.columns(2)
     with cad:
         with st.container(border=True):
-            st.markdown("#### Importação Inteligente (IA)")
+            st.markdown("#### 📖 Extração Segura (RAG)")
+            st.caption("A IA analisará EXCLUSIVAMENTE o texto fornecido abaixo para evitar alucinações médicas.")
+            
             n_med = st.text_input("Princípio Ativo ou Medicamento:")
-            if st.button("Mapear Literatura Médica", type="primary", use_container_width=True) and n_med:
+            txt_bula = st.text_area("Cole trechos da Bula (Posologia e Interações):", height=120, placeholder="Ex: Interage com Ibuprofeno, Varfarina...")
+            
+            if st.button("Extrair Dados da Bula", type="primary", use_container_width=True) and n_med and txt_bula:
                 if model:
-                    with st.spinner("Analisando bulas e literatura médica..."):
-                        # PROMPT DE FERRO ATUALIZADO AQUI
-                        prompt = f"""Atue como um farmacologista clínico. Retorne um JSON puro (sem formatação markdown) para o medicamento {n_med}.
-Chaves obrigatórias:
-- nome_apresentacao (string)
-- vias_permitidas (lista de strings)
+                    with st.spinner("Lendo bula e extraindo evidências clínicas..."):
+                        prompt = f"""Atue como um sistema extrator de dados médicos. 
+REGRA ABSOLUTA: Baseie-se ESTRITAMENTE no texto da bula fornecido abaixo. NÃO use conhecimento externo e NÃO invente interações.
+
+Texto da Bula:
+\"\"\"{txt_bula}\"\"\"
+
+Com base apenas no texto acima, retorne um JSON PURO com as chaves:
+- nome_apresentacao (string: {n_med})
+- vias_permitidas (lista de strings extraída do texto)
 - unidade_medida (string: ml, comprimido, ampola ou gotas)
-- alerta_iv (string curta ou null)
-- concentracao_mg_ml (float)
+- alerta_iv (string ou null)
+- concentracao_mg_ml (float, tente extrair do texto, ou null se não achar)
 - dose_mg_kg (float ou null)
-- interacoes_graves (lista EXAUSTIVA de strings com os nomes exatos dos princípios ativos. REGRA: NUNCA use nomes de classes como 'AINEs' ou 'Anticoagulantes'. Você DEVE listar os fármacos específicos, ex: 'ibuprofeno', 'diclofenaco', 'varfarina').
-- interacoes_moderadas (lista seguindo a mesma regra acima)."""
+- interacoes_graves (lista EXAUSTIVA de strings com os nomes EXATOS dos princípios ativos citados no texto. Converta classes como 'AINEs' para os nomes dos remédios comuns dessa classe se necessário, como 'ibuprofeno').
+- interacoes_moderadas (lista)."""
                         
                         res = model.generate_content(prompt).text
                         sucesso = False
                         try:
                             dados_ia = json.loads(res[res.find('{'):res.rfind('}')+1])
-                            if "erro" in dados_ia:
-                                st.error("❌ Medicamento não reconhecido nas bases consultadas.")
-                            else:
-                                banco_medicamentos.update({n_med.lower().replace(' ', '_'): dados_ia})
-                                with open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
-                                st.success("✅ Protocolo adicionado com sucesso ao banco local!")
-                                sucesso = True
+                            banco_medicamentos.update({n_med.lower().replace(' ', '_'): dados_ia})
+                            with open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
+                            st.success("✅ Protocolo seguro adicionado ao banco!")
+                            sucesso = True
                         except Exception as e: 
-                            st.error(f"❌ Erro na formatação do retorno. Tente pesquisar novamente.")
+                            st.error(f"❌ Erro na formatação do retorno da IA.")
                         
                         if sucesso:
-                            time.sleep(1)
+                            time.sleep(1.5)
                             st.rerun()
                 else: st.error("Serviço de IA Offline.")
     with rem:
