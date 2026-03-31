@@ -258,7 +258,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 13.2 | Motor de IA Blindado (BR)")
+    st.caption("🚀 Versão 14.0 | Explicabilidade IA")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -288,7 +288,7 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO
+# ABA 2: PRESCRIÇÃO (COM IA EM TEMPO REAL)
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -308,10 +308,28 @@ with aba_rotina:
                     grave = [r for r in medicamentos_em_uso if any(x in r.lower() for x in [i.lower() for i in dados.get("interacoes_graves", [])])]
                     moderado = [r for r in medicamentos_em_uso if any(x in r.lower() for x in [i.lower() for i in dados.get("interacoes_moderadas", [])])]
                     
+                    # ALERTAS NORMAIS
                     if grave: st.error(f"🛑 **GRAVE:** Risco severo de interação com {', '.join(grave)}")
                     elif moderado: st.warning(f"⚠️ **MODERADO:** Possível conflito com {', '.join(moderado)}")
                     else: st.success("✅ Perfil seguro. Nenhuma interação grave detectada.")
                     
+                    # NOVA FEATURE: PARECER CLÍNICO DA IA SE HOUVER RISCO
+                    if grave or moderado:
+                        conflitos = grave + moderado
+                        with st.expander("🤖 Parecer Clínico IA (Ver Explicabilidade)"):
+                            st.caption("Gera uma explicação farmacológica em tempo real baseada na literatura.")
+                            if st.button("Consultar Risco Clínico", use_container_width=True):
+                                if model:
+                                    with st.spinner("Analisando vias metabólicas..."):
+                                        prompt_risco = f"Atue como um farmacologista clínico. Explique em apenas 1 parágrafo curto, direto e profissional o risco da interação medicamentosa entre '{dados['nome_apresentacao']}' e os seguintes medicamentos que o paciente já usa: '{', '.join(conflitos)}'. Foco nas consequências clínicas para o paciente."
+                                        try:
+                                            explicacao = model.generate_content(prompt_risco).text
+                                            st.info(explicacao)
+                                        except Exception as e:
+                                            st.error("Erro ao gerar explicação. Tente novamente.")
+                                else:
+                                    st.error("Serviço de IA Offline. Verifique a API Key.")
+
                     st.divider()
                     
                     unid_bruto = dados.get("unidade_medida", "ML")
