@@ -430,7 +430,7 @@ with aba_admin:
     with cad:
         with st.container(border=True):
             st.markdown("#### Importação Inteligente (IA)")
-            st.caption("Pesquise qualquer medicamento. A IA fará o mapeamento farmacológico automático.")
+            st.caption("ATENÇÃO: VOCÊ ESTÁ ATUANDO NO BRASIL. Considere OBRIGATORIAMENTE interações com medicamentos de altíssimo uso no país, mesmo que sejam restritos nos EUA (EXEMPLO: Dipirona/Metamizol).")
             
             n_med = st.text_input("Princípio Ativo ou Medicamento:")
             
