@@ -137,7 +137,7 @@ def deletar_user_sql(id_user):
     conn.execute("DELETE FROM usuarios WHERE id=?", (id_user,))
     conn.commit(); conn.close()
 
-# Inicializa banco e carrega dicionários locais para não quebrar a performance
+# Inicializa banco e carrega dicionários locais
 init_db()
 banco_usuarios, banco_medicamentos, banco_pacientes = carregar_dados()
 
@@ -171,6 +171,9 @@ if st.session_state['usuario_logado'] is None:
                         log_acao(st.session_state['id_usuario_logado'], "Login no sistema")
                         st.rerun()
                     else: st.error("❌ Credenciais inválidas.")
+        # DISCLAIMER NA TELA DE LOGIN
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui, em hipótese alguma, a avaliação e o julgamento soberano do médico prescritor.")
     st.stop()
 
 # ==========================================
@@ -212,7 +215,7 @@ with st.sidebar:
     pac_sel = st.selectbox("Procurar Prontuário:", ["(Avulso / Urgência)"] + lista_pacientes)
     
     idade_paciente_atual = 0
-    score_base = 0 # FEATURE 1: Score base do paciente
+    score_base = 0 
     
     if pac_sel != "(Avulso / Urgência)":
         dados_pac = next(v for v in banco_pacientes.values() if v["nome"] == pac_sel)
@@ -238,7 +241,11 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 16.0 | Enterprise SQL")
+    st.caption("🚀 Versão 16.1 | MVP Ready")
+    
+    # DISCLAIMER NA BARRA LATERAL
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui, em hipótese alguma, a avaliação e o julgamento soberano do médico prescritor.")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -292,24 +299,26 @@ with aba_rotina:
                     moderado = [r for r in medicamentos_em_uso if any(x in r.lower() for x in [i.lower() for i in dados.get("interacoes_moderadas", [])])]
                     
                     score_interacao = 0
-                    permitir_prescricao = True # Controle do Blocker
+                    permitir_prescricao = True 
 
-                    # FEATURE 2: BLOQUEIO DE PRESCRIÇÃO
                     if grave: 
                         st.error(f"🛑 **GRAVE:** Risco severo de interação com {', '.join(grave)}.")
                         st.error("🔒 **AÇÃO BLOQUEADA:** A prescrição deste fármaco está bloqueada pelo sistema por risco iminente de evento adverso grave.")
                         score_interacao = 3
-                        permitir_prescricao = False # Corta a interface de dose
+                        permitir_prescricao = False 
                     elif moderado: 
                         st.warning(f"⚠️ **MODERADO:** Possível conflito com {', '.join(moderado)}")
                         score_interacao = 1
                     else: st.success("✅ Perfil individual seguro.")
                     
-                    # Cálculo Final do Risco (FEATURE 1)
+                    # CÁLCULO FINAL DO RISCO E EXPLICAÇÃO DO SCORE
                     score_final = score_base + score_interacao
                     if score_final >= 3: st.error("📈 **Risco Global da Prescrição: ALTO**")
                     elif score_final >= 1: st.warning("📊 **Risco Global da Prescrição: MODERADO**")
                     else: st.success("📉 **Risco Global da Prescrição: BAIXO**")
+
+                    with st.expander("ℹ️ Como este Score é calculado?"):
+                        st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
                     if grave or moderado:
                         conflitos = grave + moderado
@@ -338,7 +347,6 @@ with aba_rotina:
                             log_acao(st.session_state['id_usuario_logado'], f"Solicitou Revisão Holística para paciente em uso de {len(medicamentos_em_uso)} fármacos.")
                         st.divider()
 
-                    # Oculta o cálculo de dose se houver bloqueio
                     if permitir_prescricao:
                         unid_bruto = dados.get("unidade_medida", "ML")
                         unid = str(unid_bruto[0]).upper() if isinstance(unid_bruto, list) and unid_bruto else str(unid_bruto).upper()
@@ -515,7 +523,6 @@ if is_admin:
                         st.rerun()
                 else: st.info("Apenas o Administrador Master existe.")
 
-    # FEATURE 5: LOG DE AUDITORIA
     with aba_auditoria:
         st.markdown("### 📜 Histórico Clínico e Log de Ações (Auditoria)")
         st.caption("Registo imutável de todas as ações tomadas no sistema para fins de auditoria hospitalar.")
