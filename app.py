@@ -12,7 +12,7 @@ import google.generativeai as genai
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA E CSS PREMIUM (SaaS)
 # ==========================================
-st.set_page_config(page_title="SafeDose Pro", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="MedSync", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -113,7 +113,6 @@ def init_db():
 
 def log_acao(usuario, acao):
     conn = sqlite3.connect(DB_FILE)
-    # Correção do Fuso Horário para São Paulo (UTC-3)
     fuso_br = timezone(timedelta(hours=-3))
     agora = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
     conn.execute("INSERT INTO logs (timestamp, usuario, acao) VALUES (?, ?, ?)", (agora, usuario, acao))
@@ -191,7 +190,7 @@ if st.session_state['usuario_logado'] is None:
         st.markdown("<br><br><br>", unsafe_allow_html=True)
         with st.container(border=True):
             st.title("🔐 Acesso Restrito")
-            st.caption("SafeDose Pro - Sistema de Decisão Clínica")
+            st.caption("MedSync - Sistema de Decisão Clínica")
             with st.form("form_login"):
                 usuario = st.text_input("ID de Acesso:")
                 senha = st.text_input("Palavra-passe:", type="password")
@@ -229,7 +228,7 @@ model = genai.GenerativeModel(modelo_valido) if modelo_valido else None
 # BARRA LATERAL & SCORE DE RISCO BASE
 # ==========================================
 with st.sidebar:
-    st.title("SafeDose Pro ⚡")
+    st.title("MedSync ⚡")
     cargo = st.session_state['cargo_usuario']
     icone_cargo = "👨‍💻" if cargo == "ADM" else "👨‍⚕️" if cargo == "Médico" else "🩺"
     st.success(f"{icone_cargo} **Plantão:** \n\n {st.session_state['usuario_logado']}\n\n*Perfil: {cargo}*")
@@ -272,7 +271,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 17.2 | Auditoria UI + Fuso BR")
+    st.caption("🚀 Versão 17.3 | MedSync Edition")
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.warning("⚠️ **AVISO LEGAL:** Ferramenta SAD. Não substitui o médico.")
@@ -510,7 +509,7 @@ with aba_pacientes:
             else: st.info("Nenhum paciente internado.")
 
 # ==========================================
-# ABA 4: SISTEMA
+# ABA 4: SISTEMA 
 # ==========================================
 with aba_admin:
     st.markdown("### 🤖 Gestão da Farmácia Hospitalar")
@@ -618,7 +617,6 @@ if is_admin:
         conn.close()
         
         if logs:
-            # Transformando os dados brutos numa tabela bonita (Dataframe)
             tabela_logs = [{"Data/Hora": l[0], "Usuário": l[1], "Ação Registrada": l[2]} for l in logs]
             st.dataframe(tabela_logs, use_container_width=True, hide_index=True)
         else:
