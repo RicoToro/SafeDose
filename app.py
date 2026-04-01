@@ -104,6 +104,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS medicamentos (id TEXT PRIMARY KEY, dados TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS pacientes (id TEXT PRIMARY KEY, dados TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, usuario TEXT, acao TEXT)''')
+    # === NOVA TABELA DE CACHE DA IA ===
     c.execute('''CREATE TABLE IF NOT EXISTS cache_ia (chave TEXT PRIMARY KEY, resposta TEXT)''')
     
     c.execute("SELECT * FROM usuarios WHERE id='admin'")
@@ -129,6 +130,7 @@ def carregar_dados():
     conn.close()
     return b_usuarios, b_meds, b_pacs
 
+# Funções do Banco SQLite
 def salvar_paciente_sql(id_pac, dados):
     conn = sqlite3.connect(DB_FILE)
     conn.execute("INSERT OR REPLACE INTO pacientes VALUES (?, ?)", (id_pac, json.dumps(dados, ensure_ascii=False)))
@@ -159,6 +161,7 @@ def deletar_user_sql(id_user):
     conn.execute("DELETE FROM usuarios WHERE id=?", (id_user,))
     conn.commit(); conn.close()
 
+# === FUNÇÕES DE CACHE PERSISTENTE DA IA ===
 def buscar_cache_ia(chave):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -270,10 +273,10 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 17.1 | Bunker Edition (Offline Ready)")
+    st.caption("🚀 Versão 17.0 | The Demo Saver (Cache SQL)")
     
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.warning("⚠️ **AVISO LEGAL:** Ferramenta SAD. Não substitui o médico.")
+    st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui a avaliação do médico prescritor.")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -361,28 +364,36 @@ with aba_rotina:
                     with st.expander("ℹ️ Como este Score é calculado?"):
                         st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
+                    # === PARECER IA COM CACHE PERSISTENTE (SQLITE) ===
                     if conflitos_graves_encontrados or conflitos_moderados_encontrados:
                         conflitos = conflitos_graves_encontrados + conflitos_moderados_encontrados
                         chave_risco = f"parecer_{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
                         
+                        # Tenta buscar do banco de dados primeiro
                         resposta_cache = buscar_cache_ia(chave_risco)
                         
                         if resposta_cache:
-                            st.info(f"**🤖 Parecer IA (Memória Rápida Local):**\n\n{resposta_cache}")
+                            st.info(f"**🤖 Parecer IA (Memória Rápida):**\n\n{resposta_cache}")
                         else:
                             if model:
-                                with st.spinner("🤖 A gerar parecer farmacológico via API..."):
+                                with st.spinner("🤖 A gerar parecer farmacológico..."):
                                     prompt_risco = f"Atue como farmacologista clínico. Explique num parágrafo curto o risco da interação entre '{dados['nome_apresentacao']}' e: '{', '.join(conflitos)}'."
                                     try: 
                                         res = model.generate_content(prompt_risco, safety_settings=FILTROS_SEGURANCA)
+                                        # Salva no banco para sempre!
                                         salvar_cache_ia(chave_risco, res.text)
                                         st.info(f"**🤖 Parecer IA:**\n\n{res.text}")
                                     except Exception as e: 
-                                        st.error("⏳ Limite de consultas da API Google atingido. Use o botão PLANO B na aba Sistema.")
+                                        err_str = str(e).lower()
+                                        if "429" in err_str or "quota" in err_str or "exhausted" in err_str:
+                                            st.error("⏳ Limite de consultas da API atingido. Aguarde 1 minuto.")
+                                        else:
+                                            st.error("⚠️ Falha ao gerar parecer técnico.")
                             else: st.warning("Serviço de IA Offline.")
 
                     st.divider()
 
+                    # === HOLÍSTICO IA COM CACHE PERSISTENTE (SQLITE) ===
                     if medicamentos_em_uso:
                         chave_holistica = f"holistico_{dados['nome_apresentacao']}_{'_'.join(medicamentos_em_uso)}"
                         
@@ -390,17 +401,22 @@ with aba_rotina:
                             resposta_hol_cache = buscar_cache_ia(chave_holistica)
                             
                             if resposta_hol_cache:
-                                st.success(f"**Análise Global (Memória Rápida Local):**\n\n{resposta_hol_cache}")
+                                st.success(f"**Análise Global (Memória Rápida):**\n\n{resposta_hol_cache}")
                             else:
                                 if model:
-                                    with st.spinner("A analisar o quadro sistémico completo via API..."):
+                                    with st.spinner("A analisar o quadro sistémico completo..."):
                                         prompt_holistico = f"Paciente usa: {', '.join(medicamentos_em_uso)}. Nova medicação proposta: {dados['nome_apresentacao']}. Faça uma análise clínica HOLÍSTICA num parágrafo identificando efeitos em cascata ou sobrecarga."
                                         try: 
                                             res_hol = model.generate_content(prompt_holistico, safety_settings=FILTROS_SEGURANCA)
+                                            # Salva no banco para sempre!
                                             salvar_cache_ia(chave_holistica, res_hol.text)
                                             st.success(f"**Análise Global:**\n\n{res_hol.text}")
                                         except Exception as e: 
-                                            st.error("⏳ Limite de consultas da API Google atingido. Use o botão PLANO B na aba Sistema.")
+                                            err_str = str(e).lower()
+                                            if "429" in err_str or "quota" in err_str or "exhausted" in err_str:
+                                                st.error("⏳ Limite de consultas da API atingido. Aguarde 1 minuto.")
+                                            else:
+                                                st.error("⚠️ Falha ao gerar revisão completa.")
                                 log_acao(st.session_state['id_usuario_logado'], f"Solicitou Revisão Holística para paciente em uso de {len(medicamentos_em_uso)} fármacos.")
                         st.divider()
 
@@ -508,54 +524,15 @@ with aba_pacientes:
             else: st.info("Nenhum paciente internado.")
 
 # ==========================================
-# ABA 4: SISTEMA (COM PLANO B)
+# ABA 4: SISTEMA (SQLITE COM BLINDAGEM JSON)
 # ==========================================
 with aba_admin:
     st.markdown("### 🤖 Gestão da Farmácia Hospitalar")
-    
-    # --- O BOTÃO SALVA-VIDAS DA APRESENTAÇÃO ---
-    with st.expander("🚨 PLANO B: INJETAR DADOS DE APRESENTAÇÃO (SEM INTERNET)"):
-        st.warning("A API gratuita do Google travou pelo limite de uso? Clique no botão abaixo para injetar a Dipirona e a Ciclosporina (com pareceres prontos) direto no banco de dados. Apresentação garantida a 100%.")
-        if st.button("💉 Injetar Dados da Banca (Dipirona + Ciclosporina)"):
-            dados_demo_dipirona = {
-                "nome_apresentacao": "Dipirona",
-                "vias_permitidas": ["Oral", "Intravenosa", "Intramuscular"],
-                "unidade_medida": "ml",
-                "alerta_iv": "Administrar lentamente. Risco de hipotensão grave.",
-                "concentracao_mg_ml": 500.0,
-                "dose_mg_kg": None,
-                "dose_maxima_diaria_mg": 4000.0,
-                "interacoes_graves": ["ciclosporina", "clorpromazina"],
-                "interacoes_moderadas": ["aspirina"]
-            }
-            dados_demo_ciclosporina = {
-                "nome_apresentacao": "Ciclosporina",
-                "vias_permitidas": ["Oral", "Intravenosa"],
-                "unidade_medida": "ml",
-                "alerta_iv": "Monitorar função renal e pressão arterial.",
-                "concentracao_mg_ml": 50.0,
-                "dose_mg_kg": 3.0,
-                "dose_maxima_diaria_mg": 1000.0,
-                "interacoes_graves": ["dipirona", "ibuprofeno", "diclofenaco"],
-                "interacoes_moderadas": []
-            }
-            # Salvar os remédios
-            salvar_med_sql("dipirona", dados_demo_dipirona)
-            salvar_med_sql("ciclosporina", dados_demo_ciclosporina)
-            
-            # Injetar os pareceres perfeitos da IA direto no Cache
-            salvar_cache_ia("parecer_Ciclosporina_dipirona", "A dipirona é um forte indutor do citocromo P450 (CYP3A4), enzima responsável pela metabolização da ciclosporina. O uso concomitante reduz drasticamente os níveis sanguíneos da ciclosporina, podendo levar à rejeição aguda de órgãos transplantados. Interação absolutamente contraindicada.")
-            salvar_cache_ia("holistico_Ciclosporina_dipirona", "Análise Sistêmica: O paciente apresenta risco severo de falha imunossupressora. A introdução de Ciclosporina em um paciente já em uso de Dipirona resultará em clearance acelerado do imunossupressor. É mandatório suspender a Dipirona e substituir por um analgésico não-indutor (ex: Paracetamol) antes de iniciar a terapia com Ciclosporina, além de monitorar rigorosamente a creatinina e pressão arterial.")
-            
-            st.success("✅ DADOS INJETADOS COM SUCESSO! Vá para a aba Prescrição e teste!")
-            time.sleep(2)
-            st.rerun()
-
     cad, rem = st.columns(2)
     with cad:
         with st.container(border=True):
             st.markdown("#### Importação Inteligente (IA)")
-            st.caption("A IA fará o mapeamento farmacológico automático via API.")
+            st.caption("A IA fará o mapeamento farmacológico automático.")
             n_med = st.text_input("Princípio Ativo ou Medicamento:")
             if st.button("Mapear Literatura", type="primary", use_container_width=True) and n_med:
                 if model:
