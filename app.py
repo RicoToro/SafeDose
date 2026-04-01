@@ -106,7 +106,6 @@ def carregar_dados():
     conn.close()
     return b_usuarios, b_meds, b_pacs
 
-# Funções auxiliares para salvar no SQLite
 def salvar_paciente_sql(id_pac, dados):
     conn = sqlite3.connect(DB_FILE)
     conn.execute("INSERT OR REPLACE INTO pacientes VALUES (?, ?)", (id_pac, json.dumps(dados, ensure_ascii=False)))
@@ -163,7 +162,6 @@ if st.session_state['usuario_logado'] is None:
                 usuario = st.text_input("ID de Acesso:")
                 senha = st.text_input("Palavra-passe:", type="password")
                 if st.form_submit_button("Entrar no Sistema", use_container_width=True):
-                    # Autenticação usando HASH
                     if usuario in banco_usuarios and banco_usuarios[usuario]["senha"] == hash_senha(senha):
                         st.session_state['id_usuario_logado'] = usuario
                         st.session_state['usuario_logado'] = banco_usuarios[usuario]["nome"]
@@ -171,7 +169,7 @@ if st.session_state['usuario_logado'] is None:
                         log_acao(st.session_state['id_usuario_logado'], "Login no sistema")
                         st.rerun()
                     else: st.error("❌ Credenciais inválidas.")
-        # DISCLAIMER NA TELA DE LOGIN
+        
         st.markdown("<br>", unsafe_allow_html=True)
         st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui, em hipótese alguma, a avaliação e o julgamento soberano do médico prescritor.")
     st.stop()
@@ -241,11 +239,10 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 16.1 | MVP Ready")
+    st.caption("🚀 Versão 16.2 | JSON Blindado")
     
-    # DISCLAIMER NA BARRA LATERAL
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui, em hipótese alguma, a avaliação e o julgamento soberano do médico prescritor.")
+    st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui a avaliação do médico prescritor.")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -311,7 +308,6 @@ with aba_rotina:
                         score_interacao = 1
                     else: st.success("✅ Perfil individual seguro.")
                     
-                    # CÁLCULO FINAL DO RISCO E EXPLICAÇÃO DO SCORE
                     score_final = score_base + score_interacao
                     if score_final >= 3: st.error("📈 **Risco Global da Prescrição: ALTO**")
                     elif score_final >= 1: st.warning("📊 **Risco Global da Prescrição: MODERADO**")
@@ -444,7 +440,7 @@ with aba_pacientes:
             else: st.info("Nenhum paciente internado.")
 
 # ==========================================
-# ABA 4: SISTEMA (SQLITE)
+# ABA 4: SISTEMA (SQLITE COM BLINDAGEM JSON)
 # ==========================================
 with aba_admin:
     st.markdown("### 🤖 Gestão da Farmácia Hospitalar")
@@ -456,23 +452,36 @@ with aba_admin:
             n_med = st.text_input("Princípio Ativo ou Medicamento:")
             if st.button("Mapear Literatura", type="primary", use_container_width=True) and n_med:
                 if model:
-                    with st.spinner(f"A consultar bases de dados..."):
+                    with st.spinner(f"A consultar bases de dados para {n_med}..."):
                         prompt = f"""Atue como o Farmacêutico Chefe de um hospital de alta complexidade no Brasil. 
-Sua tarefa é mapear '{n_med}' e retornar APENAS um JSON PURO. Considere interações com medicamentos brasileiros comuns (ex: Dipirona).
-NUNCA use classes (ex: 'AINEs'). Liste os princípios ativos.
+Sua tarefa é mapear '{n_med}' e retornar APENAS um JSON PURO. ZERO texto antes ou depois.
+Considere interações com medicamentos brasileiros comuns (ex: Dipirona).
+NUNCA use classes (ex: 'AINEs'). Liste os princípios ativos exatos.
 Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unidade_medida (string: ml/comprimido/ampola/gotas), alerta_iv (string/null), concentracao_mg_ml (float/null), dose_mg_kg (float/null), dose_maxima_diaria_mg (float com o limite máximo seguro em mg por dia, ou 0 se não aplicável), interacoes_graves (lista), interacoes_moderadas (lista)."""
                         try:
                             res = model.generate_content(prompt).text
-                            dados_ia = json.loads(res[res.find('{'):res.rfind('}')+1])
-                            if "nome_apresentacao" in dados_ia:
-                                id_med = n_med.lower().replace(' ', '_')
-                                salvar_med_sql(id_med, dados_ia)
-                                log_acao(st.session_state['id_usuario_logado'], f"Mapeou novo medicamento via IA: {n_med}")
-                                st.success("✅ Protocolo adicionado e guardado em SQL!")
-                                time.sleep(1.5)
-                                st.rerun()
-                            else: st.error("❌ Medicamento não encontrado.")
-                        except: st.error("❌ Erro de conexão ou formatação.")
+                            
+                            # BLINDAGEM ANTI-ALUCINAÇÃO DE FORMATO
+                            texto_limpo = res.strip().replace('```json', '').replace('```', '')
+                            inicio = texto_limpo.find('{')
+                            fim = texto_limpo.rfind('}') + 1
+                            
+                            if inicio != -1 and fim != 0:
+                                dados_ia = json.loads(texto_limpo[inicio:fim])
+                                if "nome_apresentacao" in dados_ia:
+                                    id_med = n_med.lower().replace(' ', '_')
+                                    salvar_med_sql(id_med, dados_ia)
+                                    log_acao(st.session_state['id_usuario_logado'], f"Mapeou novo medicamento via IA: {n_med}")
+                                    st.success("✅ Protocolo adicionado e guardado em SQL!")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else: 
+                                    st.error("❌ Medicamento não encontrado nas bases.")
+                            else:
+                                st.error("❌ A IA não retornou um formato de dados válido.")
+                        except Exception as e: 
+                            st.error(f"❌ Erro de conexão ou formatação. Tente novamente.")
+                            st.caption(f"Detalhe técnico: {e}")
                 else: st.error("Serviço de IA Offline.")
     with rem:
         with st.container(border=True):
