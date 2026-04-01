@@ -92,7 +92,6 @@ def normalizar_medicamento(nome):
 # GESTÃO SQLITE E CONFIGURAÇÕES SEGURAS
 # ==========================================
 DB_FILE = 'safedose.db'
-# Dicionário para desligar os filtros de segurança médica e permitir explicações
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -105,6 +104,8 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS medicamentos (id TEXT PRIMARY KEY, dados TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS pacientes (id TEXT PRIMARY KEY, dados TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, usuario TEXT, acao TEXT)''')
+    # === NOVA TABELA DE CACHE DA IA ===
+    c.execute('''CREATE TABLE IF NOT EXISTS cache_ia (chave TEXT PRIMARY KEY, resposta TEXT)''')
     
     c.execute("SELECT * FROM usuarios WHERE id='admin'")
     if not c.fetchone():
@@ -129,6 +130,7 @@ def carregar_dados():
     conn.close()
     return b_usuarios, b_meds, b_pacs
 
+# Funções do Banco SQLite
 def salvar_paciente_sql(id_pac, dados):
     conn = sqlite3.connect(DB_FILE)
     conn.execute("INSERT OR REPLACE INTO pacientes VALUES (?, ?)", (id_pac, json.dumps(dados, ensure_ascii=False)))
@@ -159,11 +161,22 @@ def deletar_user_sql(id_user):
     conn.execute("DELETE FROM usuarios WHERE id=?", (id_user,))
     conn.commit(); conn.close()
 
+# === FUNÇÕES DE CACHE PERSISTENTE DA IA ===
+def buscar_cache_ia(chave):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT resposta FROM cache_ia WHERE chave=?", (chave,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def salvar_cache_ia(chave, resposta):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("INSERT OR REPLACE INTO cache_ia VALUES (?, ?)", (chave, resposta))
+    conn.commit(); conn.close()
+
 init_db()
 banco_usuarios, banco_medicamentos, banco_pacientes = carregar_dados()
-
-if 'cache_pareceres' not in st.session_state: st.session_state['cache_pareceres'] = {}
-if 'cache_holistico' not in st.session_state: st.session_state['cache_holistico'] = {}
 
 # ==========================================
 # SISTEMA DE LOGIN SEGURO
@@ -260,7 +273,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 16.5 | Tratamento de Erro IA")
+    st.caption("🚀 Versão 17.0 | The Demo Saver (Cache SQL)")
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui a avaliação do médico prescritor.")
@@ -293,7 +306,7 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO (COM TRATAMENTO DE ERROS AVANÇADO)
+# ABA 2: PRESCRIÇÃO (COM CACHE PERSISTENTE DA IA)
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -314,7 +327,6 @@ with aba_rotina:
                     st.caption(f"🛣️ Vias: {', '.join(vias).title()}")
                     
                     nome_novo_norm = normalizar_medicamento(dados['nome_apresentacao'])
-                    
                     ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
                     ia_moderadas = [normalizar_medicamento(i) for i in dados.get("interacoes_moderadas", [])]
                     
@@ -352,51 +364,60 @@ with aba_rotina:
                     with st.expander("ℹ️ Como este Score é calculado?"):
                         st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
-                    # === TRATAMENTO DE ERROS MELHORADO - PARECER IA ===
+                    # === PARECER IA COM CACHE PERSISTENTE (SQLITE) ===
                     if conflitos_graves_encontrados or conflitos_moderados_encontrados:
                         conflitos = conflitos_graves_encontrados + conflitos_moderados_encontrados
-                        chave_risco = f"{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
-                        if chave_risco not in st.session_state['cache_pareceres']:
+                        chave_risco = f"parecer_{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
+                        
+                        # Tenta buscar do banco de dados primeiro
+                        resposta_cache = buscar_cache_ia(chave_risco)
+                        
+                        if resposta_cache:
+                            st.info(f"**🤖 Parecer IA (Memória Rápida):**\n\n{resposta_cache}")
+                        else:
                             if model:
                                 with st.spinner("🤖 A gerar parecer farmacológico..."):
                                     prompt_risco = f"Atue como farmacologista clínico. Explique num parágrafo curto o risco da interação entre '{dados['nome_apresentacao']}' e: '{', '.join(conflitos)}'."
                                     try: 
                                         res = model.generate_content(prompt_risco, safety_settings=FILTROS_SEGURANCA)
-                                        st.session_state['cache_pareceres'][chave_risco] = res.text
+                                        # Salva no banco para sempre!
+                                        salvar_cache_ia(chave_risco, res.text)
+                                        st.info(f"**🤖 Parecer IA:**\n\n{res.text}")
                                     except Exception as e: 
                                         err_str = str(e).lower()
-                                        if "response.text" in err_str or "safety" in err_str:
-                                            st.session_state['cache_pareceres'][chave_risco] = "⚠️ A IA bloqueou a resposta por Diretrizes de Segurança Médica do Google."
-                                        elif "429" in err_str or "quota" in err_str or "exhausted" in err_str:
-                                            st.session_state['cache_pareceres'][chave_risco] = "⏳ Limite de consultas gratuito da API atingido. Aguarde 1 minuto."
+                                        if "429" in err_str or "quota" in err_str or "exhausted" in err_str:
+                                            st.error("⏳ Limite de consultas da API atingido. Aguarde 1 minuto.")
                                         else:
-                                            st.session_state['cache_pareceres'][chave_risco] = f"Erro técnico: {str(e)}"
-                            else: st.session_state['cache_pareceres'][chave_risco] = "Serviço de IA Offline."
-                        st.info(f"**🤖 Parecer IA:**\n\n{st.session_state['cache_pareceres'][chave_risco]}")
+                                            st.error("⚠️ Falha ao gerar parecer técnico.")
+                            else: st.warning("Serviço de IA Offline.")
 
                     st.divider()
 
-                    # === TRATAMENTO DE ERROS MELHORADO - HOLÍSTICO ===
+                    # === HOLÍSTICO IA COM CACHE PERSISTENTE (SQLITE) ===
                     if medicamentos_em_uso:
                         chave_holistica = f"holistico_{dados['nome_apresentacao']}_{'_'.join(medicamentos_em_uso)}"
+                        
                         if st.button("🧠 Revisão Holística da Prescrição (IA)", use_container_width=True):
-                            if chave_holistica not in st.session_state['cache_holistico']:
+                            resposta_hol_cache = buscar_cache_ia(chave_holistica)
+                            
+                            if resposta_hol_cache:
+                                st.success(f"**Análise Global (Memória Rápida):**\n\n{resposta_hol_cache}")
+                            else:
                                 if model:
                                     with st.spinner("A analisar o quadro sistémico completo..."):
                                         prompt_holistico = f"Paciente usa: {', '.join(medicamentos_em_uso)}. Nova medicação proposta: {dados['nome_apresentacao']}. Faça uma análise clínica HOLÍSTICA num parágrafo identificando efeitos em cascata ou sobrecarga."
                                         try: 
                                             res_hol = model.generate_content(prompt_holistico, safety_settings=FILTROS_SEGURANCA)
-                                            st.session_state['cache_holistico'][chave_holistica] = res_hol.text
+                                            # Salva no banco para sempre!
+                                            salvar_cache_ia(chave_holistica, res_hol.text)
+                                            st.success(f"**Análise Global:**\n\n{res_hol.text}")
                                         except Exception as e: 
                                             err_str = str(e).lower()
-                                            if "response.text" in err_str or "safety" in err_str:
-                                                st.session_state['cache_holistico'][chave_holistica] = "⚠️ A IA bloqueou a resposta por Diretrizes de Segurança Médica do Google."
-                                            elif "429" in err_str or "quota" in err_str or "exhausted" in err_str:
-                                                st.session_state['cache_holistico'][chave_holistica] = "⏳ Limite de consultas da API atingido. Aguarde 1 minuto."
+                                            if "429" in err_str or "quota" in err_str or "exhausted" in err_str:
+                                                st.error("⏳ Limite de consultas da API atingido. Aguarde 1 minuto.")
                                             else:
-                                                st.session_state['cache_holistico'][chave_holistica] = f"Erro técnico: {str(e)}"
-                            st.success(f"**Análise Global:**\n\n{st.session_state['cache_holistico'][chave_holistica]}")
-                            log_acao(st.session_state['id_usuario_logado'], f"Solicitou Revisão Holística para paciente em uso de {len(medicamentos_em_uso)} fármacos.")
+                                                st.error("⚠️ Falha ao gerar revisão completa.")
+                                log_acao(st.session_state['id_usuario_logado'], f"Solicitou Revisão Holística para paciente em uso de {len(medicamentos_em_uso)} fármacos.")
                         st.divider()
 
                     if permitir_prescricao:
@@ -522,7 +543,6 @@ Considere interações com medicamentos brasileiros comuns (ex: Dipirona).
 NUNCA use classes (ex: 'AINEs'). Liste os princípios ativos exatos.
 Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unidade_medida (string: ml/comprimido/ampola/gotas), alerta_iv (string/null), concentracao_mg_ml (float/null), dose_mg_kg (float/null), dose_maxima_diaria_mg (float com o limite máximo seguro em mg por dia, ou 0 se não aplicável), interacoes_graves (lista), interacoes_moderadas (lista)."""
                         try:
-                            # Aqui também mandamos o filtro de segurança desativado
                             res = model.generate_content(prompt, safety_settings=FILTROS_SEGURANCA).text
                             
                             texto_limpo = res.strip().replace('```json', '').replace('```', '')
