@@ -111,7 +111,8 @@ def normalizar_medicamento(nome):
 # ==========================================
 # GESTÃO DE BANCO DE DADOS (SQLITE)
 # ==========================================
-DB_FILE = 'safedose.db'
+# AQUI ESTÁ A CORREÇÃO: NOME DO BANCO NOVO PARA FUGIR DO ERRO DA NUVEM
+DB_FILE = 'medsync_final.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -306,7 +307,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 18.2 | Final Pitch Edition Integral")
+    st.caption("🚀 Versão 18.3 | Final Cloud Deploy")
 
 # ==========================================
 # GESTÃO DE ABAS E LÓGICA PRINCIPAL
@@ -613,7 +614,9 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                         ch_m_del = next(k for k,v in banco_medicamentos.items() if v["nome_apresentacao"]==m_del)
                         deletar_med_sql(ch_m_del)
                         log_acao(st.session_state['id_usuario_logado'], f"Removeu medicamento: {m_del}")
-                        st.success("🗑️ Protocolo removido permanentemente."); time.sleep(1); st.rerun()
+                        st.success("🗑️ Protocolo removido permanentemente.")
+                        time.sleep(1)
+                        st.rerun()
 
     with aba_dashboard:
         st.markdown("### 📊 Visão Geral da Gestão Hospitalar (KPIs)")
