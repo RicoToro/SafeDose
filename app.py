@@ -5,6 +5,7 @@ import os
 import time
 import sqlite3
 import hashlib
+import unicodedata
 from datetime import datetime
 import google.generativeai as genai
 
@@ -61,6 +62,37 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
+# MOTOR DETERMINÍSTICO (SINÓNIMOS E BANCO FIXO)
+# ==========================================
+SINONIMOS = {
+    "novalgina": "dipirona",
+    "dipirona sodica": "dipirona",
+    "dipirona monoidratada": "dipirona",
+    "tylenol": "paracetamol",
+    "aas": "aspirina",
+    "acido acetilsalicilico": "aspirina"
+}
+
+# Banco fixo de "Hard Stops". A IA não manda aqui.
+INTERACOES_FIXAS_GRAVES = {
+    "ciclosporina": ["dipirona", "ibuprofeno", "cetoprofeno", "diclofenaco"],
+    "clorpromazina": ["dipirona"],
+    "dipirona": ["ciclosporina", "clorpromazina"],
+    "ibuprofeno": ["cetoprofeno", "ciclosporina", "aspirina"],
+    "cetoprofeno": ["ibuprofeno", "ciclosporina", "aspirina"],
+    "varfarina": ["ibuprofeno", "cetoprofeno", "aspirina", "diclofenaco"]
+}
+
+def normalizar_medicamento(nome):
+    """Remove acentos, põe em minúsculas, limpa espaços e aplica sinónimos."""
+    if not nome: return ""
+    # Remove acentos
+    n = ''.join(c for c in unicodedata.normalize('NFD', nome) if unicodedata.category(c) != 'Mn')
+    n = n.lower().strip()
+    # Verifica dicionário de sinónimos
+    return SINONIMOS.get(n, n)
+
+# ==========================================
 # GESTÃO SQLITE, HASH DE SENHAS E LOGS
 # ==========================================
 DB_FILE = 'safedose.db'
@@ -76,33 +108,26 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS pacientes (id TEXT PRIMARY KEY, dados TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, usuario TEXT, acao TEXT)''')
     
-    # Criar Administrador Padrão se não existir
     c.execute("SELECT * FROM usuarios WHERE id='admin'")
     if not c.fetchone():
         c.execute("INSERT INTO usuarios VALUES (?, ?, ?, ?)", ('admin', 'Administrador de TI', hash_senha('admin'), 'ADM'))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 def log_acao(usuario, acao):
     conn = sqlite3.connect(DB_FILE)
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("INSERT INTO logs (timestamp, usuario, acao) VALUES (?, ?, ?)", (agora, usuario, acao))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 def carregar_dados():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
     c.execute("SELECT id, nome, senha, cargo FROM usuarios")
     b_usuarios = {row[0]: {"nome": row[1], "senha": row[2], "cargo": row[3]} for row in c.fetchall()}
-    
     c.execute("SELECT id, dados FROM medicamentos")
     b_meds = {row[0]: json.loads(row[1]) for row in c.fetchall()}
-    
     c.execute("SELECT id, dados FROM pacientes")
     b_pacs = {row[0]: json.loads(row[1]) for row in c.fetchall()}
-    
     conn.close()
     return b_usuarios, b_meds, b_pacs
 
@@ -136,7 +161,6 @@ def deletar_user_sql(id_user):
     conn.execute("DELETE FROM usuarios WHERE id=?", (id_user,))
     conn.commit(); conn.close()
 
-# Inicializa banco e carrega dicionários locais
 init_db()
 banco_usuarios, banco_medicamentos, banco_pacientes = carregar_dados()
 
@@ -169,9 +193,8 @@ if st.session_state['usuario_logado'] is None:
                         log_acao(st.session_state['id_usuario_logado'], "Login no sistema")
                         st.rerun()
                     else: st.error("❌ Credenciais inválidas.")
-        
         st.markdown("<br>", unsafe_allow_html=True)
-        st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui, em hipótese alguma, a avaliação e o julgamento soberano do médico prescritor.")
+        st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui a avaliação do médico prescritor.")
     st.stop()
 
 # ==========================================
@@ -239,7 +262,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 16.2 | JSON Blindado")
+    st.caption("🚀 Versão 16.3 | Motor Determinístico")
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui a avaliação do médico prescritor.")
@@ -272,7 +295,7 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO E BLOQUEIO SEGURO
+# ABA 2: PRESCRIÇÃO (COM VALIDAÇÃO DETERMINÍSTICA)
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -292,19 +315,39 @@ with aba_rotina:
                     vias = vias_bruto if isinstance(vias_bruto, list) else [str(vias_bruto)]
                     st.caption(f"🛣️ Vias: {', '.join(vias).title()}")
                     
-                    grave = [r for r in medicamentos_em_uso if any(x in r.lower() for x in [i.lower() for i in dados.get("interacoes_graves", [])])]
-                    moderado = [r for r in medicamentos_em_uso if any(x in r.lower() for x in [i.lower() for i in dados.get("interacoes_moderadas", [])])]
+                    # === NOVO: MOTOR DE CRUZAMENTO NORMALIZADO ===
+                    nome_novo_norm = normalizar_medicamento(dados['nome_apresentacao'])
                     
+                    # Interações gravadas pela IA no banco de dados
+                    ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
+                    ia_moderadas = [normalizar_medicamento(i) for i in dados.get("interacoes_moderadas", [])]
+                    
+                    # Interações Fixas (Rede de Segurança)
+                    banco_fixo_graves = INTERACOES_FIXAS_GRAVES.get(nome_novo_norm, [])
+                    
+                    # Une tudo para não deixar escapar nada
+                    todas_graves = list(set(ia_graves + banco_fixo_graves))
+                    
+                    conflitos_graves_encontrados = []
+                    conflitos_moderados_encontrados = []
+                    
+                    for remedio_uso in medicamentos_em_uso:
+                        uso_norm = normalizar_medicamento(remedio_uso)
+                        if uso_norm in todas_graves:
+                            conflitos_graves_encontrados.append(remedio_uso)
+                        elif uso_norm in ia_moderadas:
+                            conflitos_moderados_encontrados.append(remedio_uso)
+
                     score_interacao = 0
                     permitir_prescricao = True 
 
-                    if grave: 
-                        st.error(f"🛑 **GRAVE:** Risco severo de interação com {', '.join(grave)}.")
+                    if conflitos_graves_encontrados: 
+                        st.error(f"🛑 **GRAVE:** Risco severo de interação com {', '.join(conflitos_graves_encontrados)}.")
                         st.error("🔒 **AÇÃO BLOQUEADA:** A prescrição deste fármaco está bloqueada pelo sistema por risco iminente de evento adverso grave.")
                         score_interacao = 3
                         permitir_prescricao = False 
-                    elif moderado: 
-                        st.warning(f"⚠️ **MODERADO:** Possível conflito com {', '.join(moderado)}")
+                    elif conflitos_moderados_encontrados: 
+                        st.warning(f"⚠️ **MODERADO:** Possível conflito com {', '.join(conflitos_moderados_encontrados)}")
                         score_interacao = 1
                     else: st.success("✅ Perfil individual seguro.")
                     
@@ -316,8 +359,8 @@ with aba_rotina:
                     with st.expander("ℹ️ Como este Score é calculado?"):
                         st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
-                    if grave or moderado:
-                        conflitos = grave + moderado
+                    if conflitos_graves_encontrados or conflitos_moderados_encontrados:
+                        conflitos = conflitos_graves_encontrados + conflitos_moderados_encontrados
                         chave_risco = f"{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
                         if chave_risco not in st.session_state['cache_pareceres']:
                             if model:
@@ -461,7 +504,6 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                         try:
                             res = model.generate_content(prompt).text
                             
-                            # BLINDAGEM ANTI-ALUCINAÇÃO DE FORMATO
                             texto_limpo = res.strip().replace('```json', '').replace('```', '')
                             inicio = texto_limpo.find('{')
                             fim = texto_limpo.rfind('}') + 1
