@@ -6,7 +6,7 @@ import time
 import sqlite3
 import hashlib
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import google.generativeai as genai
 
 # ==========================================
@@ -104,7 +104,6 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS medicamentos (id TEXT PRIMARY KEY, dados TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS pacientes (id TEXT PRIMARY KEY, dados TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, usuario TEXT, acao TEXT)''')
-    # === NOVA TABELA DE CACHE DA IA ===
     c.execute('''CREATE TABLE IF NOT EXISTS cache_ia (chave TEXT PRIMARY KEY, resposta TEXT)''')
     
     c.execute("SELECT * FROM usuarios WHERE id='admin'")
@@ -114,7 +113,9 @@ def init_db():
 
 def log_acao(usuario, acao):
     conn = sqlite3.connect(DB_FILE)
-    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Correção do Fuso Horário para São Paulo (UTC-3)
+    fuso_br = timezone(timedelta(hours=-3))
+    agora = datetime.now(fuso_br).strftime("%d/%m/%Y %H:%M:%S")
     conn.execute("INSERT INTO logs (timestamp, usuario, acao) VALUES (?, ?, ?)", (agora, usuario, acao))
     conn.commit(); conn.close()
 
@@ -130,7 +131,6 @@ def carregar_dados():
     conn.close()
     return b_usuarios, b_meds, b_pacs
 
-# Funções do Banco SQLite
 def salvar_paciente_sql(id_pac, dados):
     conn = sqlite3.connect(DB_FILE)
     conn.execute("INSERT OR REPLACE INTO pacientes VALUES (?, ?)", (id_pac, json.dumps(dados, ensure_ascii=False)))
@@ -161,7 +161,6 @@ def deletar_user_sql(id_user):
     conn.execute("DELETE FROM usuarios WHERE id=?", (id_user,))
     conn.commit(); conn.close()
 
-# === FUNÇÕES DE CACHE PERSISTENTE DA IA ===
 def buscar_cache_ia(chave):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -273,10 +272,10 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 17.0 | The Demo Saver (Cache SQL)")
+    st.caption("🚀 Versão 17.2 | Auditoria UI + Fuso BR")
     
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui a avaliação do médico prescritor.")
+    st.warning("⚠️ **AVISO LEGAL:** Ferramenta SAD. Não substitui o médico.")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -306,7 +305,7 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO (COM CACHE PERSISTENTE DA IA)
+# ABA 2: PRESCRIÇÃO
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -364,36 +363,28 @@ with aba_rotina:
                     with st.expander("ℹ️ Como este Score é calculado?"):
                         st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
-                    # === PARECER IA COM CACHE PERSISTENTE (SQLITE) ===
                     if conflitos_graves_encontrados or conflitos_moderados_encontrados:
                         conflitos = conflitos_graves_encontrados + conflitos_moderados_encontrados
                         chave_risco = f"parecer_{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
                         
-                        # Tenta buscar do banco de dados primeiro
                         resposta_cache = buscar_cache_ia(chave_risco)
                         
                         if resposta_cache:
-                            st.info(f"**🤖 Parecer IA (Memória Rápida):**\n\n{resposta_cache}")
+                            st.info(f"**🤖 Parecer IA (Memória Rápida Local):**\n\n{resposta_cache}")
                         else:
                             if model:
-                                with st.spinner("🤖 A gerar parecer farmacológico..."):
+                                with st.spinner("🤖 A gerar parecer farmacológico via API..."):
                                     prompt_risco = f"Atue como farmacologista clínico. Explique num parágrafo curto o risco da interação entre '{dados['nome_apresentacao']}' e: '{', '.join(conflitos)}'."
                                     try: 
                                         res = model.generate_content(prompt_risco, safety_settings=FILTROS_SEGURANCA)
-                                        # Salva no banco para sempre!
                                         salvar_cache_ia(chave_risco, res.text)
                                         st.info(f"**🤖 Parecer IA:**\n\n{res.text}")
                                     except Exception as e: 
-                                        err_str = str(e).lower()
-                                        if "429" in err_str or "quota" in err_str or "exhausted" in err_str:
-                                            st.error("⏳ Limite de consultas da API atingido. Aguarde 1 minuto.")
-                                        else:
-                                            st.error("⚠️ Falha ao gerar parecer técnico.")
+                                        st.error("⏳ Limite de consultas da API Google atingido. Aguarde 1 minuto e tente novamente.")
                             else: st.warning("Serviço de IA Offline.")
 
                     st.divider()
 
-                    # === HOLÍSTICO IA COM CACHE PERSISTENTE (SQLITE) ===
                     if medicamentos_em_uso:
                         chave_holistica = f"holistico_{dados['nome_apresentacao']}_{'_'.join(medicamentos_em_uso)}"
                         
@@ -401,22 +392,17 @@ with aba_rotina:
                             resposta_hol_cache = buscar_cache_ia(chave_holistica)
                             
                             if resposta_hol_cache:
-                                st.success(f"**Análise Global (Memória Rápida):**\n\n{resposta_hol_cache}")
+                                st.success(f"**Análise Global (Memória Rápida Local):**\n\n{resposta_hol_cache}")
                             else:
                                 if model:
-                                    with st.spinner("A analisar o quadro sistémico completo..."):
+                                    with st.spinner("A analisar o quadro sistémico completo via API..."):
                                         prompt_holistico = f"Paciente usa: {', '.join(medicamentos_em_uso)}. Nova medicação proposta: {dados['nome_apresentacao']}. Faça uma análise clínica HOLÍSTICA num parágrafo identificando efeitos em cascata ou sobrecarga."
                                         try: 
                                             res_hol = model.generate_content(prompt_holistico, safety_settings=FILTROS_SEGURANCA)
-                                            # Salva no banco para sempre!
                                             salvar_cache_ia(chave_holistica, res_hol.text)
                                             st.success(f"**Análise Global:**\n\n{res_hol.text}")
                                         except Exception as e: 
-                                            err_str = str(e).lower()
-                                            if "429" in err_str or "quota" in err_str or "exhausted" in err_str:
-                                                st.error("⏳ Limite de consultas da API atingido. Aguarde 1 minuto.")
-                                            else:
-                                                st.error("⚠️ Falha ao gerar revisão completa.")
+                                            st.error("⏳ Limite de consultas da API Google atingido. Aguarde 1 minuto e tente novamente.")
                                 log_acao(st.session_state['id_usuario_logado'], f"Solicitou Revisão Holística para paciente em uso de {len(medicamentos_em_uso)} fármacos.")
                         st.divider()
 
@@ -462,7 +448,7 @@ with aba_rotina:
     else: st.info("A base de dados de medicamentos está vazia.")
 
 # ==========================================
-# ABA 3: PACIENTES (COM SQLITE)
+# ABA 3: PACIENTES
 # ==========================================
 with aba_pacientes:
     c_add_edit, c_del = st.columns(2)
@@ -524,7 +510,7 @@ with aba_pacientes:
             else: st.info("Nenhum paciente internado.")
 
 # ==========================================
-# ABA 4: SISTEMA (SQLITE COM BLINDAGEM JSON)
+# ABA 4: SISTEMA
 # ==========================================
 with aba_admin:
     st.markdown("### 🤖 Gestão da Farmácia Hospitalar")
@@ -532,7 +518,7 @@ with aba_admin:
     with cad:
         with st.container(border=True):
             st.markdown("#### Importação Inteligente (IA)")
-            st.caption("A IA fará o mapeamento farmacológico automático.")
+            st.caption("A IA fará o mapeamento farmacológico automático via API.")
             n_med = st.text_input("Princípio Ativo ou Medicamento:")
             if st.button("Mapear Literatura", type="primary", use_container_width=True) and n_med:
                 if model:
@@ -623,7 +609,7 @@ if is_admin:
 
     with aba_auditoria:
         st.markdown("### 📜 Histórico Clínico e Log de Ações (Auditoria)")
-        st.caption("Registo imutável de todas as ações tomadas no sistema para fins de auditoria hospitalar.")
+        st.caption("Registro imutável de todas as ações tomadas no sistema para fins de auditoria hospitalar.")
         
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
@@ -632,7 +618,8 @@ if is_admin:
         conn.close()
         
         if logs:
-            for log in logs:
-                st.text(f"[{log[0]}] Utilizador: {log[1]} -> Ação: {log[2]}")
+            # Transformando os dados brutos numa tabela bonita (Dataframe)
+            tabela_logs = [{"Data/Hora": l[0], "Usuário": l[1], "Ação Registrada": l[2]} for l in logs]
+            st.dataframe(tabela_logs, use_container_width=True, hide_index=True)
         else:
-            st.info("Nenhum log registado ainda.")
+            st.info("Nenhum log registrado ainda.")
