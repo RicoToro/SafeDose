@@ -130,7 +130,6 @@ def init_db():
     if not c.fetchone():
         c.execute("INSERT INTO usuarios VALUES (?, ?, ?, ?)", ('admin', 'Administrador de TI', hash_senha('admin'), 'ADM'))
     
-    # Criar um médico padrão para testes se não existir
     c.execute("SELECT * FROM usuarios WHERE id='gui'")
     if not c.fetchone():
         c.execute("INSERT INTO usuarios VALUES (?, ?, ?, ?)", ('gui', 'Dr. Guilherme', hash_senha('gui'), 'Médico'))
@@ -247,7 +246,7 @@ else:
     st.session_state['ultimo_acesso'] = time.time()
 
 # ==========================================
-# MOTOR DA IA (BUSCA DINÂMICA)
+# MOTOR DA IA (BUSCA DINÂMICA DE MODELO)
 # ==========================================
 CHAVE_API = os.environ.get("GEMINI_API_KEY")
 
@@ -257,13 +256,12 @@ def descobrir_modelo(chave):
     genai.configure(api_key=chave)
     try:
         modelos_disponiveis = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Tenta pegar a versão 1.5 mais recente, se falhar cai pro Pro padrão
         if 'gemini-1.5-pro-latest' in modelos_disponiveis: return 'gemini-1.5-pro-latest'
         if 'gemini-1.5-pro' in modelos_disponiveis: return 'gemini-1.5-pro'
         if 'gemini-pro' in modelos_disponiveis: return 'gemini-pro'
-        return modelos_disponiveis[0] # Pega o primeiro que funcionar
+        return modelos_disponiveis[0] 
     except: 
-        return "gemini-pro" # Fallback de segurança máxima
+        return "gemini-pro" 
 
 modelo_valido = descobrir_modelo(CHAVE_API)
 model = genai.GenerativeModel(modelo_valido) if modelo_valido else None
@@ -327,10 +325,10 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 18.3 | Clean UI & Realtime Dashboard")
+    st.caption("🚀 Versão 18.4 | Golden Master (TCC Ready)")
 
 # ==========================================
-# GESTÃO DE ABAS (CORRIGIDO PARA MÉDICOS)
+# GESTÃO DE ABAS 
 # ==========================================
 is_admin = (cargo == "ADM")
 
@@ -338,7 +336,6 @@ if is_admin:
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin, aba_dashboard, aba_equipe, aba_auditoria = abas
 else: 
-    # O médico não verá abas fantasmas de administrador!
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes"])
     aba_emergencia, aba_rotina, aba_pacientes = abas
 
@@ -394,7 +391,6 @@ with aba_rotina:
                         st.error("🔒 **AÇÃO BLOQUEADA POR HISTÓRICO DE ALERGIA.**")
                         permitir_prescricao = False
                         score_interacao = 3
-                        # Log para alimentar o Dashboard!
                         log_acao(st.session_state['id_usuario_logado'], f"Ação Bloqueada: Alergia detectada ({dados['nome_apresentacao']})")
                     else:
                         ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
@@ -417,7 +413,6 @@ with aba_rotina:
                             st.error("🔒 **AÇÃO BLOQUEADA:** Risco iminente de evento adverso grave.")
                             score_interacao = 3
                             permitir_prescricao = False 
-                            # Log para alimentar o Dashboard!
                             log_acao(st.session_state['id_usuario_logado'], f"Ação Bloqueada: Interação grave ({dados['nome_apresentacao']} + {', '.join(conflitos_graves_encontrados)})")
                         elif conflitos_moderados_encontrados: 
                             st.warning(f"⚠️ **MODERADO:** Possível conflito com {', '.join(conflitos_moderados_encontrados)}")
@@ -507,7 +502,7 @@ with aba_rotina:
     else: st.info("A base de dados de medicamentos está vazia.")
 
 # ==========================================
-# ABA 3: PACIENTES
+# ABA 3: PACIENTES 
 # ==========================================
 with aba_pacientes:
     c_add_edit, c_del = st.columns(2)
@@ -609,22 +604,32 @@ NUNCA use classes (ex: 'AINEs'). Liste os princípios ativos exatos.
 Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unidade_medida (string: ml/comprimido/ampola/gotas), alerta_iv (string/null), concentracao_mg_ml (float/null), dose_mg_kg (float/null), dose_maxima_diaria_mg (float com o limite máximo seguro em mg por dia, ou 0 se não aplicável), interacoes_graves (lista), interacoes_moderadas (lista)."""
                             try:
                                 res = model.generate_content(prompt, safety_settings=FILTROS_SEGURANCA)
-                                texto_limpo = res.text
-                                
-                                # Extrator de JSON mais robusto (evita erros se a IA colocar "```json" no começo)
+                                texto_limpo = res.text.replace('```json', '').replace('```', '').strip()
                                 inicio = texto_limpo.find('{')
-                                fim = texto_limpo.rfind('}') + 1
                                 
-                                if inicio != -1 and fim != 0:
-                                    dados_ia = json.loads(texto_limpo[inicio:fim])
+                                if inicio != -1:
+                                    texto_cortado = texto_limpo[inicio:]
+                                    
+                                    # O pulo do gato: Tratamento inteligente de erro de conversão
+                                    try:
+                                        dados_ia = json.loads(texto_cortado)
+                                    except json.JSONDecodeError as e:
+                                        if "Extra data" in str(e):
+                                            # Corta a string exatamente onde a IA começou a "tagarelar"
+                                            dados_ia = json.loads(texto_cortado[:e.pos])
+                                        else:
+                                            raise e 
+                                    
                                     if "nome_apresentacao" in dados_ia:
                                         id_med = n_med.lower().replace(' ', '_')
                                         salvar_med_sql(id_med, dados_ia)
                                         log_acao(st.session_state['id_usuario_logado'], f"Mapeou novo medicamento via IA: {n_med}")
                                         st.success("✅ Protocolo adicionado e guardado em SQL!")
                                         time.sleep(1.5); st.rerun()
-                                    else: st.error("❌ Medicamento não encontrado nas bases.")
-                                else: st.error("❌ A IA não retornou um formato de dados válido.")
+                                    else: 
+                                        st.error("❌ Medicamento não encontrado nas bases.")
+                                else:
+                                    st.error("❌ A IA não retornou um formato de dados válido.")
                             except Exception as e: 
                                 err_str = str(e).lower()
                                 if "429" in err_str or "quota" in err_str: st.error("⏳ Limite da API atingido. Aguarde 1 minuto e tente novamente.")
@@ -654,7 +659,6 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
         m2.metric(label="Fármacos Cadastrados", value=len(banco_medicamentos))
         
         conn = sqlite3.connect(DB_FILE); c = conn.cursor()
-        # O Dashboard agora conta toda vez que uma prescrição for bloqueada e salva no Log!
         c.execute("SELECT COUNT(*) FROM logs WHERE acao LIKE '%Bloqueada%' OR acao LIKE '%Revisão Holística%'")
         intervencoes = c.fetchone()[0] + 12 
         conn.close()
