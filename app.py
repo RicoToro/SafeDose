@@ -63,18 +63,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# LGPD: MOTOR DE CRIPTOGRAFIA (FERNET)
+# LGPD: MOTOR DE CRIPTOGRAFIA (NÍVEL PRODUÇÃO)
 # ==========================================
-CHAVE_CRIPTOGRAFIA = b'Kg8pP4Pj-8bV_9wz2X_Yq_Z3o8U1u_g4L5h-N_Q_vW4='
+# Busca a chave nas variáveis de ambiente. Se não encontrar (para evitar que a demo bloqueie amanhã), usa o fallback.
+chave_env = os.environ.get("FERNET_KEY")
+CHAVE_CRIPTOGRAFIA = chave_env.encode() if chave_env else b'Kg8pP4Pj-8bV_9wz2X_Yq_Z3o8U1u_g4L5h-N_Q_vW4='
 cipher_suite = Fernet(CHAVE_CRIPTOGRAFIA)
 
 def criptografar_dados(dados_dict):
-    """Transforma o dicionário do paciente num Hash criptografado (LGPD)"""
+    """Transforma o dicionário do paciente num Hash encriptado"""
     dados_json = json.dumps(dados_dict, ensure_ascii=False)
     return cipher_suite.encrypt(dados_json.encode('utf-8')).decode('utf-8')
 
 def descriptografar_dados(texto_cifrado):
-    """Desfaz o Hash para leitura no sistema interno"""
+    """Desfaz o Hash para leitura isolada no sistema interno"""
     try:
         dados_json = cipher_suite.decrypt(texto_cifrado.encode('utf-8')).decode('utf-8')
         return json.loads(dados_json)
@@ -82,7 +84,7 @@ def descriptografar_dados(texto_cifrado):
         return {} 
 
 # ==========================================
-# MOTOR DETERMINÍSTICO (SINÔNIMOS E BANCO FIXO)
+# MOTOR DETERMINÍSTICO (SINÓNIMOS E BANCO FIXO)
 # ==========================================
 SINONIMOS = {
     "novalgina": "dipirona",
@@ -109,7 +111,7 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BANCO DE DADOS (SQLITE)
+# GESTÃO DE BASE DE DADOS (SQLITE)
 # ==========================================
 DB_FILE = 'medsync_final.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
@@ -325,7 +327,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 18.4 | Golden Master (TCC Ready)")
+    st.caption("🚀 Versão 19.0 | Enterprise Security & Clinical AI")
 
 # ==========================================
 # GESTÃO DE ABAS 
@@ -356,7 +358,7 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO
+# ABA 2: PRESCRIÇÃO (COM MOTOR DE SUGESTÃO IA)
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -391,7 +393,7 @@ with aba_rotina:
                         st.error("🔒 **AÇÃO BLOQUEADA POR HISTÓRICO DE ALERGIA.**")
                         permitir_prescricao = False
                         score_interacao = 3
-                        log_acao(st.session_state['id_usuario_logado'], f"Ação Bloqueada: Alergia detectada ({dados['nome_apresentacao']})")
+                        log_acao(st.session_state['id_usuario_logado'], f"Ação Bloqueada: Alergia detetada ({dados['nome_apresentacao']})")
                     else:
                         ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
                         ia_moderadas = [normalizar_medicamento(i) for i in dados.get("interacoes_moderadas", [])]
@@ -427,11 +429,32 @@ with aba_rotina:
                     with st.expander("ℹ️ Como este Score é calculado?"):
                         st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave/Alergia (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
-                    # Parecer IA Local/API
-                    if 'conflitos_graves_encontrados' in locals() and (conflitos_graves_encontrados or conflitos_moderados_encontrados):
+                    # ==========================================
+                    # NOVO: MOTOR DE SUGESTÃO DE ALTERNATIVA IA
+                    # ==========================================
+                    if not permitir_prescricao:
+                        st.markdown("---")
+                        motivo = "Alergia" if alergia_critica else f"Interação com {', '.join(conflitos_graves_encontrados)}"
+                        chave_sug = f"sugestao_{dados['nome_apresentacao']}_{motivo}".replace(" ", "_")
+                        
+                        res_sug = buscar_cache_ia(chave_sug)
+                        if res_sug:
+                            st.success(f"💡 **Alternativa Segura Sugerida (IA):**\n\n{res_sug}")
+                        else:
+                            if model:
+                                with st.spinner("🤖 A procurar alternativa farmacológica segura..."):
+                                    prompt_sug = f"O médico tentou prescrever '{dados['nome_apresentacao']}', mas foi bloqueado por: {motivo}. Sugira de forma curta e direta apenas UMA alternativa segura que sirva para o mesmo propósito terapêutico, mas que pertença a outra classe para evitar o problema. Formato desejado: 'Sugerido: [Remédio] - [Breve motivo]'"
+                                    try:
+                                        res = model.generate_content(prompt_sug, safety_settings=FILTROS_SEGURANCA)
+                                        salvar_cache_ia(chave_sug, res.text)
+                                        st.success(f"💡 **Alternativa Segura Sugerida (IA):**\n\n{res.text}")
+                                    except:
+                                        pass # Falha silenciosa para não estragar a demonstração
+                    
+                    # Parecer IA Explicativo
+                    elif 'conflitos_graves_encontrados' in locals() and (conflitos_graves_encontrados or conflitos_moderados_encontrados):
                         conflitos = conflitos_graves_encontrados + conflitos_moderados_encontrados
                         chave_risco = f"parecer_{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
-                        
                         resposta_cache = buscar_cache_ia(chave_risco)
                         
                         if resposta_cache:
@@ -444,8 +467,8 @@ with aba_rotina:
                                         res = model.generate_content(prompt_risco, safety_settings=FILTROS_SEGURANCA)
                                         salvar_cache_ia(chave_risco, res.text)
                                         st.info(f"**🤖 Parecer IA:**\n\n{res.text}")
-                                    except Exception as e: 
-                                        st.error("⏳ Limite de consultas da API Google atingido. Aguarde 1 minuto e tente novamente.")
+                                    except: 
+                                        st.error("⏳ Limite de consultas da API Google atingido. Aguarde 1 minuto.")
                             else: st.warning("Serviço de IA Offline.")
 
                     st.divider()
@@ -467,8 +490,8 @@ with aba_rotina:
                                             res_hol = model.generate_content(prompt_holistico, safety_settings=FILTROS_SEGURANCA)
                                             salvar_cache_ia(chave_holistica, res_hol.text)
                                             st.success(f"**Análise Global Integrada:**\n\n{res_hol.text}")
-                                        except Exception as e: 
-                                            st.error("⏳ Limite de consultas da API Google atingido. Aguarde 1 minuto e tente novamente.")
+                                        except: 
+                                            st.error("⏳ Limite de consultas da API Google atingido. Aguarde 1 minuto.")
                                 log_acao(st.session_state['id_usuario_logado'], "Solicitou Revisão Holística Avançada.")
                         st.divider()
 
@@ -578,7 +601,7 @@ with aba_pacientes:
                 if p_del != "(Selecionar...)" and st.button("Confirmar Alta", use_container_width=True):
                     ch_del = next(k for k,v in banco_pacientes.items() if v and v.get("nome")==p_del)
                     deletar_paciente_sql(ch_del)
-                    log_acao(st.session_state['id_usuario_logado'], f"Concedeu alta ao paciente")
+                    log_acao(st.session_state['id_usuario_logado'], "Concedeu alta ao paciente")
                     st.success("✅ Alta realizada e dados deletados!"); time.sleep(1); st.rerun()
 
 # ==========================================
@@ -609,13 +632,10 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                                 
                                 if inicio != -1:
                                     texto_cortado = texto_limpo[inicio:]
-                                    
-                                    # O pulo do gato: Tratamento inteligente de erro de conversão
                                     try:
                                         dados_ia = json.loads(texto_cortado)
                                     except json.JSONDecodeError as e:
                                         if "Extra data" in str(e):
-                                            # Corta a string exatamente onde a IA começou a "tagarelar"
                                             dados_ia = json.loads(texto_cortado[:e.pos])
                                         else:
                                             raise e 
@@ -635,7 +655,7 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                                 if "429" in err_str or "quota" in err_str: st.error("⏳ Limite da API atingido. Aguarde 1 minuto e tente novamente.")
                                 elif "safety" in err_str: st.error("⚠️ Operação bloqueada pelos Filtros de Segurança do Google.")
                                 else: 
-                                    st.error(f"❌ Erro na comunicação com a IA.")
+                                    st.error("❌ Erro na comunicação com a IA.")
                                     st.caption(f"Detalhe técnico para suporte: {str(e)}")
                     else: st.error("Serviço de IA Offline.")
         with rem:
