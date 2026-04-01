@@ -247,11 +247,26 @@ else:
     st.session_state['ultimo_acesso'] = time.time()
 
 # ==========================================
-# MOTOR DA IA
+# MOTOR DA IA (BUSCA DINÂMICA)
 # ==========================================
 CHAVE_API = os.environ.get("GEMINI_API_KEY")
-genai.configure(api_key=CHAVE_API) if CHAVE_API else None
-model = genai.GenerativeModel("gemini-1.5-pro") if CHAVE_API else None
+
+@st.cache_data(show_spinner=False)
+def descobrir_modelo(chave):
+    if not chave: return None
+    genai.configure(api_key=chave)
+    try:
+        modelos_disponiveis = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Tenta pegar a versão 1.5 mais recente, se falhar cai pro Pro padrão
+        if 'gemini-1.5-pro-latest' in modelos_disponiveis: return 'gemini-1.5-pro-latest'
+        if 'gemini-1.5-pro' in modelos_disponiveis: return 'gemini-1.5-pro'
+        if 'gemini-pro' in modelos_disponiveis: return 'gemini-pro'
+        return modelos_disponiveis[0] # Pega o primeiro que funcionar
+    except: 
+        return "gemini-pro" # Fallback de segurança máxima
+
+modelo_valido = descobrir_modelo(CHAVE_API)
+model = genai.GenerativeModel(modelo_valido) if modelo_valido else None
 
 # ==========================================
 # BARRA LATERAL & SCORE DE RISCO BASE
