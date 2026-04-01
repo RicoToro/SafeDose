@@ -3,6 +3,9 @@ import json
 import math
 import os
 import time
+import sqlite3
+import hashlib
+from datetime import datetime
 import google.generativeai as genai
 
 # ==========================================
@@ -20,8 +23,7 @@ st.markdown("""
     [data-testid="stSidebar"] * { color: #f8f9fa !important; }
 
     [data-testid="stSidebar"] .stButton>button {
-        background-color: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        background-color: rgba(255, 255, 255, 0.05) !important; border: 1px solid rgba(255, 255, 255, 0.2) !important;
         color: #ffffff !important; box-shadow: none !important;
     }
     [data-testid="stSidebar"] .stButton>button p { color: #ffffff !important; }
@@ -29,11 +31,9 @@ st.markdown("""
 
     [data-testid="stSidebar"] div[data-baseweb="select"] > div,
     [data-testid="stSidebar"] div[data-baseweb="input"] {
-        background-color: rgba(0, 0, 0, 0.2) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important; color: white !important;
+        background-color: rgba(0, 0, 0, 0.2) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; color: white !important;
     }
     [data-testid="stSidebar"] input { color: #ffffff !important; background-color: transparent !important; -webkit-text-fill-color: #ffffff !important; }
-
     [data-testid="stSidebar"] div[data-testid="stNumberInputContainer"] {
         background-color: rgba(0, 0, 0, 0.2) !important; border: 1px solid rgba(255, 255, 255, 0.1) !important; border-radius: 8px;
     }
@@ -61,31 +61,96 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# LEITURA DOS BANCOS DE DADOS E CACHE
+# GESTÃO SQLITE, HASH DE SENHAS E LOGS
 # ==========================================
-try:
-    with open("Usuarios.json", "r", encoding="utf-8") as file: banco_usuarios = json.load(file)
-except:
-    banco_usuarios = {"admin": {"nome": "Administrador de TI", "senha": "admin", "cargo": "ADM"}}
-    with open("Usuarios.json", "w", encoding="utf-8") as f: json.dump(banco_usuarios, f, indent=2, ensure_ascii=False)
+DB_FILE = 'safedose.db'
 
-try:
-    with open("Database.json", "r", encoding="utf-8") as file: banco_medicamentos = json.load(file)
-except: banco_medicamentos = {}
+def hash_senha(senha):
+    return hashlib.sha256(senha.encode()).hexdigest()
 
-try:
-    with open("Pacientes.json", "r", encoding="utf-8") as file: banco_pacientes = json.load(file)
-except: banco_pacientes = {}
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (id TEXT PRIMARY KEY, nome TEXT, senha TEXT, cargo TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS medicamentos (id TEXT PRIMARY KEY, dados TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS pacientes (id TEXT PRIMARY KEY, dados TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, usuario TEXT, acao TEXT)''')
+    
+    # Criar Administrador Padrão se não existir
+    c.execute("SELECT * FROM usuarios WHERE id='admin'")
+    if not c.fetchone():
+        c.execute("INSERT INTO usuarios VALUES (?, ?, ?, ?)", ('admin', 'Administrador de TI', hash_senha('admin'), 'ADM'))
+    conn.commit()
+    conn.close()
+
+def log_acao(usuario, acao):
+    conn = sqlite3.connect(DB_FILE)
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("INSERT INTO logs (timestamp, usuario, acao) VALUES (?, ?, ?)", (agora, usuario, acao))
+    conn.commit()
+    conn.close()
+
+def carregar_dados():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    
+    c.execute("SELECT id, nome, senha, cargo FROM usuarios")
+    b_usuarios = {row[0]: {"nome": row[1], "senha": row[2], "cargo": row[3]} for row in c.fetchall()}
+    
+    c.execute("SELECT id, dados FROM medicamentos")
+    b_meds = {row[0]: json.loads(row[1]) for row in c.fetchall()}
+    
+    c.execute("SELECT id, dados FROM pacientes")
+    b_pacs = {row[0]: json.loads(row[1]) for row in c.fetchall()}
+    
+    conn.close()
+    return b_usuarios, b_meds, b_pacs
+
+# Funções auxiliares para salvar no SQLite
+def salvar_paciente_sql(id_pac, dados):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("INSERT OR REPLACE INTO pacientes VALUES (?, ?)", (id_pac, json.dumps(dados, ensure_ascii=False)))
+    conn.commit(); conn.close()
+
+def deletar_paciente_sql(id_pac):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("DELETE FROM pacientes WHERE id=?", (id_pac,))
+    conn.commit(); conn.close()
+
+def salvar_med_sql(id_med, dados):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("INSERT OR REPLACE INTO medicamentos VALUES (?, ?)", (id_med, json.dumps(dados, ensure_ascii=False)))
+    conn.commit(); conn.close()
+
+def deletar_med_sql(id_med):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("DELETE FROM medicamentos WHERE id=?", (id_med,))
+    conn.commit(); conn.close()
+
+def salvar_user_sql(id_user, nome, senha_hash, cargo):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("INSERT OR REPLACE INTO usuarios VALUES (?, ?, ?, ?)", (id_user, nome, senha_hash, cargo))
+    conn.commit(); conn.close()
+
+def deletar_user_sql(id_user):
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("DELETE FROM usuarios WHERE id=?", (id_user,))
+    conn.commit(); conn.close()
+
+# Inicializa banco e carrega dicionários locais para não quebrar a performance
+init_db()
+banco_usuarios, banco_medicamentos, banco_pacientes = carregar_dados()
 
 if 'cache_pareceres' not in st.session_state: st.session_state['cache_pareceres'] = {}
 if 'cache_holistico' not in st.session_state: st.session_state['cache_holistico'] = {}
 
 # ==========================================
-# SISTEMA DE LOGIN
+# SISTEMA DE LOGIN SEGURO
 # ==========================================
 if 'usuario_logado' not in st.session_state:
     st.session_state['usuario_logado'] = None
     st.session_state['cargo_usuario'] = None
+    st.session_state['id_usuario_logado'] = None
 
 if st.session_state['usuario_logado'] is None:
     c1, col_login, c2 = st.columns([1, 1.5, 1])
@@ -96,11 +161,14 @@ if st.session_state['usuario_logado'] is None:
             st.caption("SafeDose Pro - Sistema de Decisão Clínica")
             with st.form("form_login"):
                 usuario = st.text_input("ID de Acesso:")
-                senha = st.text_input("Senha:", type="password")
+                senha = st.text_input("Palavra-passe:", type="password")
                 if st.form_submit_button("Entrar no Sistema", use_container_width=True):
-                    if usuario in banco_usuarios and banco_usuarios[usuario]["senha"] == senha:
+                    # Autenticação usando HASH
+                    if usuario in banco_usuarios and banco_usuarios[usuario]["senha"] == hash_senha(senha):
+                        st.session_state['id_usuario_logado'] = usuario
                         st.session_state['usuario_logado'] = banco_usuarios[usuario]["nome"]
                         st.session_state['cargo_usuario'] = banco_usuarios[usuario]["cargo"]
+                        log_acao(st.session_state['id_usuario_logado'], "Login no sistema")
                         st.rerun()
                     else: st.error("❌ Credenciais inválidas.")
     st.stop()
@@ -124,7 +192,7 @@ modelo_valido = descobrir_modelo(CHAVE_API)
 model = genai.GenerativeModel(modelo_valido) if modelo_valido else None
 
 # ==========================================
-# BARRA LATERAL & ALGORITMO DE SCORE DE RISCO
+# BARRA LATERAL & SCORE DE RISCO BASE
 # ==========================================
 with st.sidebar:
     st.title("SafeDose Pro ⚡")
@@ -132,7 +200,8 @@ with st.sidebar:
     icone_cargo = "👨‍💻" if cargo == "ADM" else "👨‍⚕️" if cargo == "Médico" else "🩺"
     st.success(f"{icone_cargo} **Plantão:** \n\n {st.session_state['usuario_logado']}\n\n*Perfil: {cargo}*")
     
-    if st.button("🚪 Encerrar Sessão", use_container_width=True):
+    if st.button("🚪 Terminar Sessão", use_container_width=True):
+        log_acao(st.session_state['id_usuario_logado'], "Logout")
         st.session_state['usuario_logado'] = None
         st.session_state['cargo_usuario'] = None
         st.rerun()
@@ -140,12 +209,12 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🏥 Triagem do Paciente")
     lista_pacientes = [info["nome"] for info in banco_pacientes.values()]
-    pac_sel = st.selectbox("Buscar Prontuário:", ["(Avulso / Emergência)"] + lista_pacientes)
+    pac_sel = st.selectbox("Procurar Prontuário:", ["(Avulso / Urgência)"] + lista_pacientes)
     
     idade_paciente_atual = 0
-    score_risco = 0 # Algoritmo de Score
+    score_base = 0 # FEATURE 1: Score base do paciente
     
-    if pac_sel != "(Avulso / Emergência)":
+    if pac_sel != "(Avulso / Urgência)":
         dados_pac = next(v for v in banco_pacientes.values() if v["nome"] == pac_sel)
         peso_paciente = float(dados_pac["peso"])
         idade_paciente_atual = int(dados_pac.get('idade', 0))
@@ -162,25 +231,25 @@ with st.sidebar:
         lista_remedios = [v["nome_apresentacao"] for v in banco_medicamentos.values()]
         medicamentos_em_uso = st.multiselect("O que o paciente já toma?", lista_remedios)
 
-    # Lógica do Score de Risco
-    if idade_paciente_atual >= 60: score_risco += 1
-    if len(medicamentos_em_uso) >= 5: score_risco += 2
-
-    if len(medicamentos_em_uso) >= 5:
-        st.error("⚠️ **POLIFARMÁCIA DETECTADA**")
+    if idade_paciente_atual >= 60: score_base += 1
+    if len(medicamentos_em_uso) >= 5: 
+        score_base += 2
+        st.error("⚠️ **POLIFARMÁCIA DETETADA**")
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 15.0 | Clinical Intelligence")
+    st.caption("🚀 Versão 16.0 | Enterprise SQL")
 
 # ==========================================
 # GESTÃO DE ABAS 
 # ==========================================
 is_admin = (cargo == "ADM")
-if is_admin: abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "🛡️ Gestão de Equipe"])
+if is_admin: abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "🛡️ Gestão de Equipa", "📜 Auditoria"])
 else: abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
 aba_emergencia, aba_rotina, aba_pacientes, aba_admin = abas[0], abas[1], abas[2], abas[3]
-if is_admin: aba_equipe = abas[4]
+if is_admin: 
+    aba_equipe = abas[4]
+    aba_auditoria = abas[5]
 
 # ==========================================
 # ABA 1: EMERGÊNCIA
@@ -199,22 +268,17 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO HOLÍSTICA E VALIDAÇÃO DE DOSE
+# ABA 2: PRESCRIÇÃO E BLOQUEIO SEGURO
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
         col_esq, col_dir = st.columns([1.2, 1])
         with col_esq:
-            # Mostra o Nível de Risco Global
-            if score_risco >= 3: st.error("📈 **Nível de Risco do Paciente: ALTO**")
-            elif score_risco >= 1: st.warning("📊 **Nível de Risco do Paciente: MODERADO**")
-            else: st.success("📉 **Nível de Risco do Paciente: BAIXO**")
-
             lista_remedios = [v["nome_apresentacao"] for v in banco_medicamentos.values()]
             sel = st.selectbox("Prescrever nova medicação:", ["(Selecione...)"] + lista_remedios)
             
             if idade_paciente_atual >= 60:
-                st.info("🧓 **Atenção Geriátrica:** Considere ajuste de dose devido à redução do clearance renal/hepático.")
+                st.info("🧓 **Atenção Geriátrica:** Considere ajuste de dose devido à redução da depuração renal/hepática.")
                 
             if sel != "(Selecione...)":
                 dados = next(v for v in banco_medicamentos.values() if v["nome_apresentacao"] == sel)
@@ -227,63 +291,76 @@ with aba_rotina:
                     grave = [r for r in medicamentos_em_uso if any(x in r.lower() for x in [i.lower() for i in dados.get("interacoes_graves", [])])]
                     moderado = [r for r in medicamentos_em_uso if any(x in r.lower() for x in [i.lower() for i in dados.get("interacoes_moderadas", [])])]
                     
+                    score_interacao = 0
+                    permitir_prescricao = True # Controle do Blocker
+
+                    # FEATURE 2: BLOQUEIO DE PRESCRIÇÃO
                     if grave: 
-                        st.error(f"🛑 **GRAVE:** Risco severo de interação com {', '.join(grave)}")
-                        score_risco += 3
+                        st.error(f"🛑 **GRAVE:** Risco severo de interação com {', '.join(grave)}.")
+                        st.error("🔒 **AÇÃO BLOQUEADA:** A prescrição deste fármaco está bloqueada pelo sistema por risco iminente de evento adverso grave.")
+                        score_interacao = 3
+                        permitir_prescricao = False # Corta a interface de dose
                     elif moderado: 
                         st.warning(f"⚠️ **MODERADO:** Possível conflito com {', '.join(moderado)}")
-                        score_risco += 1
+                        score_interacao = 1
                     else: st.success("✅ Perfil individual seguro.")
                     
+                    # Cálculo Final do Risco (FEATURE 1)
+                    score_final = score_base + score_interacao
+                    if score_final >= 3: st.error("📈 **Risco Global da Prescrição: ALTO**")
+                    elif score_final >= 1: st.warning("📊 **Risco Global da Prescrição: MODERADO**")
+                    else: st.success("📉 **Risco Global da Prescrição: BAIXO**")
+
                     if grave or moderado:
                         conflitos = grave + moderado
                         chave_risco = f"{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
                         if chave_risco not in st.session_state['cache_pareceres']:
                             if model:
-                                with st.spinner("🤖 Gerando parecer farmacológico..."):
-                                    prompt_risco = f"Atue como farmacologista clínico. Explique em 1 parágrafo curto o risco da interação entre '{dados['nome_apresentacao']}' e: '{', '.join(conflitos)}'."
+                                with st.spinner("🤖 A gerar parecer farmacológico..."):
+                                    prompt_risco = f"Atue como farmacologista clínico. Explique num parágrafo curto o risco da interação entre '{dados['nome_apresentacao']}' e: '{', '.join(conflitos)}'."
                                     try: st.session_state['cache_pareceres'][chave_risco] = model.generate_content(prompt_risco).text
                                     except: st.session_state['cache_pareceres'][chave_risco] = "Erro ao gerar explicação."
                             else: st.session_state['cache_pareceres'][chave_risco] = "Serviço de IA Offline."
-                        st.info(f"**🤖 Parecer IA (1 para 1):**\n\n{st.session_state['cache_pareceres'][chave_risco]}")
+                        st.info(f"**🤖 Parecer IA:**\n\n{st.session_state['cache_pareceres'][chave_risco]}")
 
                     st.divider()
 
-                    # NOVA FEATURE: Revisão Holística da Prescrição
                     if medicamentos_em_uso:
                         chave_holistica = f"holistico_{dados['nome_apresentacao']}_{'_'.join(medicamentos_em_uso)}"
                         if st.button("🧠 Revisão Holística da Prescrição (IA)", use_container_width=True):
                             if chave_holistica not in st.session_state['cache_holistico']:
                                 if model:
-                                    with st.spinner("Analisando o quadro sistêmico completo..."):
-                                        prompt_holistico = f"Paciente usa: {', '.join(medicamentos_em_uso)}. Nova medicação proposta: {dados['nome_apresentacao']}. Faça uma análise clínica HOLÍSTICA em 1 parágrafo identificando efeitos em cascata, sobrecarga renal/hepática ou interações complexas entre múltiplos fármacos."
+                                    with st.spinner("A analisar o quadro sistémico completo..."):
+                                        prompt_holistico = f"Paciente usa: {', '.join(medicamentos_em_uso)}. Nova medicação proposta: {dados['nome_apresentacao']}. Faça uma análise clínica HOLÍSTICA num parágrafo identificando efeitos em cascata ou sobrecarga."
                                         try: st.session_state['cache_holistico'][chave_holistica] = model.generate_content(prompt_holistico).text
                                         except: st.session_state['cache_holistico'][chave_holistica] = "Falha ao gerar revisão completa."
-                            st.success(f"**Análise de Pacote Completo:**\n\n{st.session_state['cache_holistico'][chave_holistica]}")
+                            st.success(f"**Análise Global:**\n\n{st.session_state['cache_holistico'][chave_holistica]}")
+                            log_acao(st.session_state['id_usuario_logado'], f"Solicitou Revisão Holística para paciente em uso de {len(medicamentos_em_uso)} fármacos.")
                         st.divider()
 
-                    unid_bruto = dados.get("unidade_medida", "ML")
-                    unid = str(unid_bruto[0]).upper() if isinstance(unid_bruto, list) and unid_bruto else str(unid_bruto).upper()
+                    # Oculta o cálculo de dose se houver bloqueio
+                    if permitir_prescricao:
+                        unid_bruto = dados.get("unidade_medida", "ML")
+                        unid = str(unid_bruto[0]).upper() if isinstance(unid_bruto, list) and unid_bruto else str(unid_bruto).upper()
+                        dose_maxima = float(dados.get("dose_maxima_diaria_mg", 0))
 
-                    # FEATURE 2: VALIDAÇÃO DE DOSE MÁXIMA
-                    dose_maxima = float(dados.get("dose_maxima_diaria_mg", 0))
-
-                    if dados.get("concentracao_mg_ml") is not None:
-                        conc = float(dados["concentracao_mg_ml"])
-                        if dados.get("dose_mg_kg") is not None:
-                            dose = peso_paciente * float(dados["dose_mg_kg"])
-                            st.info(f"⚖️ Dose base ({peso_paciente}kg): {dose}mg \n\n ➡️ **Administrar: {round(dose/conc, 2)} {unid}**")
-                            if dose_maxima > 0 and dose > dose_maxima:
-                                st.error(f"❌ **ERRO CRÍTICO:** Dose calculada ({dose}mg) ultrapassa a Dose Máxima Diária permitida ({dose_maxima}mg).")
-                        else:
-                            d_pres = st.number_input("Prescrição Médica (MG):", 0.0, value=float(conc))
-                            if dose_maxima > 0 and d_pres > dose_maxima:
-                                st.error(f"❌ **ERRO DE PRESCRIÇÃO:** A dose de {d_pres}mg ultrapassa o limite seguro de {dose_maxima}mg/dia para este fármaco.")
-                            elif d_pres > 0 and conc > 0: 
-                                st.info(f"➡️ **Administrar: {round(d_pres/conc, 2)} {unid}**")
-                    else: st.warning("⚠️ Dados de concentração base incompletos.")
+                        if dados.get("concentracao_mg_ml") is not None:
+                            conc = float(dados["concentracao_mg_ml"])
+                            if dados.get("dose_mg_kg") is not None:
+                                dose = peso_paciente * float(dados["dose_mg_kg"])
+                                st.info(f"⚖️ Dose base ({peso_paciente}kg): {dose}mg \n\n ➡️ **Administrar: {round(dose/conc, 2)} {unid}**")
+                                if dose_maxima > 0 and dose > dose_maxima:
+                                    st.error(f"❌ **ERRO CRÍTICO:** Dose calculada ({dose}mg) ultrapassa a Dose Máxima Diária permitida ({dose_maxima}mg).")
+                            else:
+                                d_pres = st.number_input("Prescrição Médica (MG):", 0.0, value=float(conc))
+                                if dose_maxima > 0 and d_pres > dose_maxima:
+                                    st.error(f"❌ **ERRO DE PRESCRIÇÃO:** A dose de {d_pres}mg ultrapassa o limite seguro de {dose_maxima}mg/dia.")
+                                elif d_pres > 0 and conc > 0: 
+                                    st.info(f"➡️ **Administrar: {round(d_pres/conc, 2)} {unid}**")
+                        else: st.warning("⚠️ Dados de concentração base incompletos.")
+        
         with col_dir:
-            if sel != "(Selecione...)":
+            if sel != "(Selecione...)" and ('permitir_prescricao' in locals() and permitir_prescricao):
                 vias_str = ", ".join(vias).lower()
                 if "intravenosa" in vias_str or "iv" in vias_str:
                     with st.container(border=True):
@@ -294,10 +371,10 @@ with aba_rotina:
                         if st.button("Calcular Vazão", use_container_width=True):
                             gts = math.ceil(vol/(tmp*3)) if un_t=="Horas" else math.ceil((vol*20)/tmp)
                             st.metric("Velocidade de Infusão", f"{gts} gts/min")
-    else: st.info("O banco de medicamentos está vazio.")
+    else: st.info("A base de dados de medicamentos está vazia.")
 
 # ==========================================
-# ABA 3: PACIENTES (COM EDIÇÃO)
+# ABA 3: PACIENTES (COM SQLITE)
 # ==========================================
 with aba_pacientes:
     c_add_edit, c_del = st.columns(2)
@@ -312,11 +389,12 @@ with aba_pacientes:
                 ps_p = col_ps.number_input("Peso (kg):", 1.0, 250.0, 70.0)
                 lista_todos = [v["nome_apresentacao"] for v in banco_medicamentos.values()]
                 meds = st.multiselect("Medicamentos de Uso Contínuo:", lista_todos)
-                if st.button("Salvar Novo Prontuário", type="primary", use_container_width=True):
+                if st.button("Guardar Novo Prontuário", type="primary", use_container_width=True):
                     if n:
                         id_pac = n.lower().replace(" ", "_")
-                        banco_pacientes[id_pac] = {"nome": n, "idade": id_p, "peso": ps_p, "uso_continuo": meds, "criado_por": st.session_state['usuario_logado']}
-                        with open("Pacientes.json", "w", encoding="utf-8") as f: json.dump(banco_pacientes, f, indent=2, ensure_ascii=False)
+                        dados_novos = {"nome": n, "idade": id_p, "peso": ps_p, "uso_continuo": meds, "criado_por": st.session_state['usuario_logado']}
+                        salvar_paciente_sql(id_pac, dados_novos)
+                        log_acao(st.session_state['id_usuario_logado'], f"Admitiu novo paciente: {n}")
                         st.success(f"✅ Prontuário criado!")
                         time.sleep(1)
                         st.rerun()
@@ -336,7 +414,8 @@ with aba_pacientes:
                         meds_edit = st.multiselect("Uso Contínuo:", lista_todos, default=meds_atuais)
                         if st.button("Atualizar Dados Clínicos", type="primary", use_container_width=True):
                             banco_pacientes[chave_edit].update({"nome": n_edit, "idade": id_edit, "peso": ps_edit, "uso_continuo": meds_edit, "atualizado_por": st.session_state['usuario_logado']})
-                            with open("Pacientes.json", "w", encoding="utf-8") as f: json.dump(banco_pacientes, f, indent=2, ensure_ascii=False)
+                            salvar_paciente_sql(chave_edit, banco_pacientes[chave_edit])
+                            log_acao(st.session_state['id_usuario_logado'], f"Editou prontuário de: {n_edit}")
                             st.success(f"✅ Prontuário atualizado!")
                             time.sleep(1)
                             st.rerun()
@@ -349,15 +428,15 @@ with aba_pacientes:
                 p_del = st.selectbox("Selecione o paciente para Alta:", ["(Selecionar...)"] + [v["nome"] for v in banco_pacientes.values()])
                 if p_del != "(Selecionar...)" and st.button("Confirmar Alta", use_container_width=True):
                     ch_del = next(k for k,v in banco_pacientes.items() if v["nome"]==p_del)
-                    del banco_pacientes[ch_del]
-                    with open("Pacientes.json", "w", encoding="utf-8") as f: json.dump(banco_pacientes, f, indent=2, ensure_ascii=False)
+                    deletar_paciente_sql(ch_del)
+                    log_acao(st.session_state['id_usuario_logado'], f"Concedeu alta ao paciente: {p_del}")
                     st.success(f"✅ Alta realizada!")
                     time.sleep(1)
                     st.rerun()
             else: st.info("Nenhum paciente internado.")
 
 # ==========================================
-# ABA 4: SISTEMA 
+# ABA 4: SISTEMA (SQLITE)
 # ==========================================
 with aba_admin:
     st.markdown("### 🤖 Gestão da Farmácia Hospitalar")
@@ -369,8 +448,7 @@ with aba_admin:
             n_med = st.text_input("Princípio Ativo ou Medicamento:")
             if st.button("Mapear Literatura", type="primary", use_container_width=True) and n_med:
                 if model:
-                    with st.spinner(f"Consultando bases de dados..."):
-                        # PROMPT MODIFICADO PARA INCLUIR DOSE MÁXIMA DIÁRIA
+                    with st.spinner(f"A consultar bases de dados..."):
                         prompt = f"""Atue como o Farmacêutico Chefe de um hospital de alta complexidade no Brasil. 
 Sua tarefa é mapear '{n_med}' e retornar APENAS um JSON PURO. Considere interações com medicamentos brasileiros comuns (ex: Dipirona).
 NUNCA use classes (ex: 'AINEs'). Liste os princípios ativos.
@@ -379,9 +457,10 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                             res = model.generate_content(prompt).text
                             dados_ia = json.loads(res[res.find('{'):res.rfind('}')+1])
                             if "nome_apresentacao" in dados_ia:
-                                banco_medicamentos.update({n_med.lower().replace(' ', '_'): dados_ia})
-                                with open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
-                                st.success("✅ Protocolo adicionado com parâmetros estendidos!")
+                                id_med = n_med.lower().replace(' ', '_')
+                                salvar_med_sql(id_med, dados_ia)
+                                log_acao(st.session_state['id_usuario_logado'], f"Mapeou novo medicamento via IA: {n_med}")
+                                st.success("✅ Protocolo adicionado e guardado em SQL!")
                                 time.sleep(1.5)
                                 st.rerun()
                             else: st.error("❌ Medicamento não encontrado.")
@@ -394,31 +473,31 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                 m_del = st.selectbox("Selecione a medicação:", ["(Selecionar...)"] + [v["nome_apresentacao"] for v in banco_medicamentos.values()])
                 if m_del != "(Selecionar...)" and st.button("Excluir", use_container_width=True):
                     ch_m_del = next(k for k,v in banco_medicamentos.items() if v["nome_apresentacao"]==m_del)
-                    del banco_medicamentos[ch_m_del]
-                    with open("Database.json", "w", encoding="utf-8") as f: json.dump(banco_medicamentos, f, indent=2, ensure_ascii=False)
-                    st.success("🗑️ Protocolo removido.")
+                    deletar_med_sql(ch_m_del)
+                    log_acao(st.session_state['id_usuario_logado'], f"Removeu medicamento: {m_del}")
+                    st.success("🗑️ Protocolo removido permanentemente.")
                     time.sleep(1)
                     st.rerun()
 
 # ==========================================
-# ABA 5: EQUIPE (SÓ ADM)
+# ABAS 5 E 6: EQUIPA E AUDITORIA (SÓ ADM)
 # ==========================================
 if is_admin:
     with aba_equipe:
-        st.markdown("### 🛡️ Administração de Usuários")
+        st.markdown("### 🛡️ Administração de Utilizadores")
         u_add, u_del = st.columns(2)
         with u_add:
             with st.container(border=True):
                 st.markdown("#### Criar Acesso Profissional")
                 u_id = st.text_input("ID de Acesso:")
                 u_nm = st.text_input("Nome Completo:")
-                u_sn = st.text_input("Senha:", type="password")
+                u_sn = st.text_input("Palavra-passe:", type="password")
                 u_cg = st.selectbox("Nível:", ["Médico", "Enfermeiro", "ADM"])
-                if st.button("Salvar Usuário", type="primary", use_container_width=True):
+                if st.button("Guardar Utilizador", type="primary", use_container_width=True):
                     if u_id and u_nm and u_sn:
-                        banco_usuarios[u_id] = {"nome": u_nm, "senha": u_sn, "cargo": u_cg}
-                        with open("Usuarios.json", "w", encoding="utf-8") as f: json.dump(banco_usuarios, f, indent=2, ensure_ascii=False)
-                        st.success("✅ Credencial criada!")
+                        salvar_user_sql(u_id, u_nm, hash_senha(u_sn), u_cg)
+                        log_acao(st.session_state['id_usuario_logado'], f"Criou o utilizador: {u_id} ({u_cg})")
+                        st.success("✅ Credencial encriptada e criada!")
                         time.sleep(1)
                         st.rerun()
                     else: st.error("Preencha todos os campos.")
@@ -427,11 +506,28 @@ if is_admin:
                 st.markdown("#### Revogar Acesso")
                 ids = [k for k in banco_usuarios.keys() if k != "admin"]
                 if ids:
-                    u_rem = st.selectbox("Selecione o usuário:", ["(Selecionar...)"] + ids)
+                    u_rem = st.selectbox("Selecione o utilizador:", ["(Selecionar...)"] + ids)
                     if u_rem != "(Selecionar...)" and st.button("Revogar", use_container_width=True):
-                        del banco_usuarios[u_rem]
-                        with open("Usuarios.json", "w", encoding="utf-8") as f: json.dump(banco_usuarios, f, indent=2, ensure_ascii=False)
-                        st.success("🚫 Acesso revogado.")
+                        deletar_user_sql(u_rem)
+                        log_acao(st.session_state['id_usuario_logado'], f"Revogou o acesso do utilizador: {u_rem}")
+                        st.success("🚫 Acesso revogado da base de dados.")
                         time.sleep(1)
                         st.rerun()
                 else: st.info("Apenas o Administrador Master existe.")
+
+    # FEATURE 5: LOG DE AUDITORIA
+    with aba_auditoria:
+        st.markdown("### 📜 Histórico Clínico e Log de Ações (Auditoria)")
+        st.caption("Registo imutável de todas as ações tomadas no sistema para fins de auditoria hospitalar.")
+        
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT timestamp, usuario, acao FROM logs ORDER BY id DESC LIMIT 50")
+        logs = c.fetchall()
+        conn.close()
+        
+        if logs:
+            for log in logs:
+                st.text(f"[{log[0]}] Utilizador: {log[1]} -> Ação: {log[2]}")
+        else:
+            st.info("Nenhum log registado ainda.")
