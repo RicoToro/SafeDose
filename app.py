@@ -111,7 +111,6 @@ def normalizar_medicamento(nome):
 # ==========================================
 # GESTÃO DE BANCO DE DADOS (SQLITE)
 # ==========================================
-# AQUI ESTÁ A CORREÇÃO: NOME DO BANCO NOVO PARA FUGIR DO ERRO DA NUVEM
 DB_FILE = 'medsync_final.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
@@ -130,6 +129,12 @@ def init_db():
     c.execute("SELECT * FROM usuarios WHERE id='admin'")
     if not c.fetchone():
         c.execute("INSERT INTO usuarios VALUES (?, ?, ?, ?)", ('admin', 'Administrador de TI', hash_senha('admin'), 'ADM'))
+    
+    # Criar um médico padrão para testes se não existir
+    c.execute("SELECT * FROM usuarios WHERE id='gui'")
+    if not c.fetchone():
+        c.execute("INSERT INTO usuarios VALUES (?, ?, ?, ?)", ('gui', 'Dr. Guilherme', hash_senha('gui'), 'Médico'))
+        
     conn.commit(); conn.close()
 
 def log_acao(usuario, acao):
@@ -307,20 +312,20 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 18.3 | Final Cloud Deploy")
+    st.caption("🚀 Versão 18.3 | Clean UI & Realtime Dashboard")
 
 # ==========================================
-# GESTÃO DE ABAS E LÓGICA PRINCIPAL
+# GESTÃO DE ABAS (CORRIGIDO PARA MÉDICOS)
 # ==========================================
 is_admin = (cargo == "ADM")
-if is_admin: abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
-else: abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
 
-aba_emergencia, aba_rotina, aba_pacientes, aba_admin = abas[0], abas[1], abas[2], abas[3]
 if is_admin: 
-    aba_dashboard = abas[4]
-    aba_equipe = abas[5]
-    aba_auditoria = abas[6]
+    abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
+    aba_emergencia, aba_rotina, aba_pacientes, aba_admin, aba_dashboard, aba_equipe, aba_auditoria = abas
+else: 
+    # O médico não verá abas fantasmas de administrador!
+    abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes"])
+    aba_emergencia, aba_rotina, aba_pacientes = abas
 
 # ==========================================
 # ABA 1: EMERGÊNCIA
@@ -362,7 +367,6 @@ with aba_rotina:
                     nome_norm = normalizar_medicamento(dados['nome_apresentacao'])
                     alergia_critica = False
                     
-                    # Checagem de Alergias
                     for alergia in alergias_paciente:
                         if nome_norm in normalizar_medicamento(alergia) or ("AINEs" in alergia and nome_norm in ["dipirona", "ibuprofeno", "cetoprofeno"]):
                             st.error(f"❌ **CHOQUE ANAFILÁTICO POSSÍVEL:** Paciente reporta alergia a {alergia}!")
@@ -375,6 +379,8 @@ with aba_rotina:
                         st.error("🔒 **AÇÃO BLOQUEADA POR HISTÓRICO DE ALERGIA.**")
                         permitir_prescricao = False
                         score_interacao = 3
+                        # Log para alimentar o Dashboard!
+                        log_acao(st.session_state['id_usuario_logado'], f"Ação Bloqueada: Alergia detectada ({dados['nome_apresentacao']})")
                     else:
                         ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
                         ia_moderadas = [normalizar_medicamento(i) for i in dados.get("interacoes_moderadas", [])]
@@ -396,6 +402,8 @@ with aba_rotina:
                             st.error("🔒 **AÇÃO BLOQUEADA:** Risco iminente de evento adverso grave.")
                             score_interacao = 3
                             permitir_prescricao = False 
+                            # Log para alimentar o Dashboard!
+                            log_acao(st.session_state['id_usuario_logado'], f"Ação Bloqueada: Interação grave ({dados['nome_apresentacao']} + {', '.join(conflitos_graves_encontrados)})")
                         elif conflitos_moderados_encontrados: 
                             st.warning(f"⚠️ **MODERADO:** Possível conflito com {', '.join(conflitos_moderados_encontrados)}")
                             score_interacao = 1
@@ -484,7 +492,7 @@ with aba_rotina:
     else: st.info("A base de dados de medicamentos está vazia.")
 
 # ==========================================
-# ABA 3: PACIENTES (COM UI ESTRUTURADA DE DOENÇAS/ALERGIAS)
+# ABA 3: PACIENTES
 # ==========================================
 with aba_pacientes:
     c_add_edit, c_del = st.columns(2)
@@ -585,10 +593,13 @@ Considere interações com medicamentos brasileiros comuns (ex: Dipirona).
 NUNCA use classes (ex: 'AINEs'). Liste os princípios ativos exatos.
 Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unidade_medida (string: ml/comprimido/ampola/gotas), alerta_iv (string/null), concentracao_mg_ml (float/null), dose_mg_kg (float/null), dose_maxima_diaria_mg (float com o limite máximo seguro em mg por dia, ou 0 se não aplicável), interacoes_graves (lista), interacoes_moderadas (lista)."""
                             try:
-                                res = model.generate_content(prompt, safety_settings=FILTROS_SEGURANCA).text
-                                texto_limpo = res.strip().replace('```json', '').replace('```', '')
+                                res = model.generate_content(prompt, safety_settings=FILTROS_SEGURANCA)
+                                texto_limpo = res.text
+                                
+                                # Extrator de JSON mais robusto (evita erros se a IA colocar "```json" no começo)
                                 inicio = texto_limpo.find('{')
                                 fim = texto_limpo.rfind('}') + 1
+                                
                                 if inicio != -1 and fim != 0:
                                     dados_ia = json.loads(texto_limpo[inicio:fim])
                                     if "nome_apresentacao" in dados_ia:
@@ -603,7 +614,9 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                                 err_str = str(e).lower()
                                 if "429" in err_str or "quota" in err_str: st.error("⏳ Limite da API atingido. Aguarde 1 minuto e tente novamente.")
                                 elif "safety" in err_str: st.error("⚠️ Operação bloqueada pelos Filtros de Segurança do Google.")
-                                else: st.error(f"❌ Erro de conexão. Tente novamente.")
+                                else: 
+                                    st.error(f"❌ Erro na comunicação com a IA.")
+                                    st.caption(f"Detalhe técnico para suporte: {str(e)}")
                     else: st.error("Serviço de IA Offline.")
         with rem:
             with st.container(border=True):
@@ -626,6 +639,7 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
         m2.metric(label="Fármacos Cadastrados", value=len(banco_medicamentos))
         
         conn = sqlite3.connect(DB_FILE); c = conn.cursor()
+        # O Dashboard agora conta toda vez que uma prescrição for bloqueada e salva no Log!
         c.execute("SELECT COUNT(*) FROM logs WHERE acao LIKE '%Bloqueada%' OR acao LIKE '%Revisão Holística%'")
         intervencoes = c.fetchone()[0] + 12 
         conn.close()
