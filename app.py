@@ -73,7 +73,6 @@ SINONIMOS = {
     "acido acetilsalicilico": "aspirina"
 }
 
-# Banco fixo de "Hard Stops". A IA não manda aqui.
 INTERACOES_FIXAS_GRAVES = {
     "ciclosporina": ["dipirona", "ibuprofeno", "cetoprofeno", "diclofenaco"],
     "clorpromazina": ["dipirona"],
@@ -84,16 +83,17 @@ INTERACOES_FIXAS_GRAVES = {
 }
 
 def normalizar_medicamento(nome):
-    """Remove acentos, põe em minúsculas, limpa espaços e aplica sinônimos."""
     if not nome: return ""
     n = ''.join(c for c in unicodedata.normalize('NFD', nome) if unicodedata.category(c) != 'Mn')
     n = n.lower().strip()
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO SQLITE, HASH DE SENHAS E LOGS
+# GESTÃO SQLITE E CONFIGURAÇÕES SEGURAS
 # ==========================================
 DB_FILE = 'safedose.db'
+# Dicionário para desligar os filtros de segurança médica e permitir explicações
+FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
     return hashlib.sha256(senha.encode()).hexdigest()
@@ -260,7 +260,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 16.4 | Lógica UI Sólidos")
+    st.caption("🚀 Versão 16.5 | Tratamento de Erro IA")
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui a avaliação do médico prescritor.")
@@ -293,7 +293,7 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO (COM VALIDAÇÃO DETERMINÍSTICA)
+# ABA 2: PRESCRIÇÃO (COM TRATAMENTO DE ERROS AVANÇADO)
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -313,7 +313,6 @@ with aba_rotina:
                     vias = vias_bruto if isinstance(vias_bruto, list) else [str(vias_bruto)]
                     st.caption(f"🛣️ Vias: {', '.join(vias).title()}")
                     
-                    # Motor de cruzamento normalizado
                     nome_novo_norm = normalizar_medicamento(dados['nome_apresentacao'])
                     
                     ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
@@ -353,6 +352,7 @@ with aba_rotina:
                     with st.expander("ℹ️ Como este Score é calculado?"):
                         st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
+                    # === TRATAMENTO DE ERROS MELHORADO - PARECER IA ===
                     if conflitos_graves_encontrados or conflitos_moderados_encontrados:
                         conflitos = conflitos_graves_encontrados + conflitos_moderados_encontrados
                         chave_risco = f"{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
@@ -360,13 +360,23 @@ with aba_rotina:
                             if model:
                                 with st.spinner("🤖 A gerar parecer farmacológico..."):
                                     prompt_risco = f"Atue como farmacologista clínico. Explique num parágrafo curto o risco da interação entre '{dados['nome_apresentacao']}' e: '{', '.join(conflitos)}'."
-                                    try: st.session_state['cache_pareceres'][chave_risco] = model.generate_content(prompt_risco).text
-                                    except: st.session_state['cache_pareceres'][chave_risco] = "Erro ao gerar explicação."
+                                    try: 
+                                        res = model.generate_content(prompt_risco, safety_settings=FILTROS_SEGURANCA)
+                                        st.session_state['cache_pareceres'][chave_risco] = res.text
+                                    except Exception as e: 
+                                        err_str = str(e).lower()
+                                        if "response.text" in err_str or "safety" in err_str:
+                                            st.session_state['cache_pareceres'][chave_risco] = "⚠️ A IA bloqueou a resposta por Diretrizes de Segurança Médica do Google."
+                                        elif "429" in err_str or "quota" in err_str or "exhausted" in err_str:
+                                            st.session_state['cache_pareceres'][chave_risco] = "⏳ Limite de consultas gratuito da API atingido. Aguarde 1 minuto."
+                                        else:
+                                            st.session_state['cache_pareceres'][chave_risco] = f"Erro técnico: {str(e)}"
                             else: st.session_state['cache_pareceres'][chave_risco] = "Serviço de IA Offline."
                         st.info(f"**🤖 Parecer IA:**\n\n{st.session_state['cache_pareceres'][chave_risco]}")
 
                     st.divider()
 
+                    # === TRATAMENTO DE ERROS MELHORADO - HOLÍSTICO ===
                     if medicamentos_em_uso:
                         chave_holistica = f"holistico_{dados['nome_apresentacao']}_{'_'.join(medicamentos_em_uso)}"
                         if st.button("🧠 Revisão Holística da Prescrição (IA)", use_container_width=True):
@@ -374,13 +384,21 @@ with aba_rotina:
                                 if model:
                                     with st.spinner("A analisar o quadro sistémico completo..."):
                                         prompt_holistico = f"Paciente usa: {', '.join(medicamentos_em_uso)}. Nova medicação proposta: {dados['nome_apresentacao']}. Faça uma análise clínica HOLÍSTICA num parágrafo identificando efeitos em cascata ou sobrecarga."
-                                        try: st.session_state['cache_holistico'][chave_holistica] = model.generate_content(prompt_holistico).text
-                                        except: st.session_state['cache_holistico'][chave_holistica] = "Falha ao gerar revisão completa."
+                                        try: 
+                                            res_hol = model.generate_content(prompt_holistico, safety_settings=FILTROS_SEGURANCA)
+                                            st.session_state['cache_holistico'][chave_holistica] = res_hol.text
+                                        except Exception as e: 
+                                            err_str = str(e).lower()
+                                            if "response.text" in err_str or "safety" in err_str:
+                                                st.session_state['cache_holistico'][chave_holistica] = "⚠️ A IA bloqueou a resposta por Diretrizes de Segurança Médica do Google."
+                                            elif "429" in err_str or "quota" in err_str or "exhausted" in err_str:
+                                                st.session_state['cache_holistico'][chave_holistica] = "⏳ Limite de consultas da API atingido. Aguarde 1 minuto."
+                                            else:
+                                                st.session_state['cache_holistico'][chave_holistica] = f"Erro técnico: {str(e)}"
                             st.success(f"**Análise Global:**\n\n{st.session_state['cache_holistico'][chave_holistica]}")
                             log_acao(st.session_state['id_usuario_logado'], f"Solicitou Revisão Holística para paciente em uso de {len(medicamentos_em_uso)} fármacos.")
                         st.divider()
 
-                    # === NOVO: LÓGICA DE DOSE PARA LÍQUIDOS E SÓLIDOS ===
                     if permitir_prescricao:
                         unid_bruto = dados.get("unidade_medida", "ML")
                         unid = str(unid_bruto[0]).upper() if isinstance(unid_bruto, list) and unid_bruto else str(unid_bruto).upper()
@@ -388,7 +406,6 @@ with aba_rotina:
                         
                         conc = dados.get("concentracao_mg_ml")
 
-                        # Se for remédio LÍQUIDO/INJETÁVEL (Tem mg/ml)
                         if conc is not None and float(conc) > 0:
                             conc = float(conc)
                             if dados.get("dose_mg_kg") is not None:
@@ -402,8 +419,6 @@ with aba_rotina:
                                     st.error(f"❌ **ERRO DE PRESCRIÇÃO:** A dose de {d_pres}mg ultrapassa o limite seguro de {dose_maxima}mg/dia.")
                                 elif d_pres > 0 and conc > 0: 
                                     st.info(f"➡️ **Administrar: {round(d_pres/conc, 2)} {unid}**")
-                        
-                        # Se for COMPRIMIDO/SÓLIDO (Não tem mg/ml)
                         else:
                             d_pres = st.number_input("Dose a Prescrever (MG):", 0.0, step=50.0)
                             if dose_maxima > 0 and d_pres > dose_maxima:
@@ -507,7 +522,8 @@ Considere interações com medicamentos brasileiros comuns (ex: Dipirona).
 NUNCA use classes (ex: 'AINEs'). Liste os princípios ativos exatos.
 Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unidade_medida (string: ml/comprimido/ampola/gotas), alerta_iv (string/null), concentracao_mg_ml (float/null), dose_mg_kg (float/null), dose_maxima_diaria_mg (float com o limite máximo seguro em mg por dia, ou 0 se não aplicável), interacoes_graves (lista), interacoes_moderadas (lista)."""
                         try:
-                            res = model.generate_content(prompt).text
+                            # Aqui também mandamos o filtro de segurança desativado
+                            res = model.generate_content(prompt, safety_settings=FILTROS_SEGURANCA).text
                             
                             texto_limpo = res.strip().replace('```json', '').replace('```', '')
                             inicio = texto_limpo.find('{')
@@ -527,8 +543,14 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                             else:
                                 st.error("❌ A IA não retornou um formato de dados válido.")
                         except Exception as e: 
-                            st.error(f"❌ Erro de conexão ou formatação. Tente novamente.")
-                            st.caption(f"Detalhe técnico: {e}")
+                            err_str = str(e).lower()
+                            if "429" in err_str or "quota" in err_str or "exhausted" in err_str:
+                                st.error("⏳ Limite da API atingido. Aguarde 1 minuto e tente novamente.")
+                            elif "safety" in err_str:
+                                st.error("⚠️ Operação bloqueada pelos Filtros de Segurança do Google.")
+                            else:
+                                st.error(f"❌ Erro de conexão ou formatação. Tente novamente.")
+                                st.caption(f"Detalhe técnico: {e}")
                 else: st.error("Serviço de IA Offline.")
     with rem:
         with st.container(border=True):
