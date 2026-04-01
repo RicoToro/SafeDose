@@ -62,7 +62,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# MOTOR DETERMINÍSTICO (SINÓNIMOS E BANCO FIXO)
+# MOTOR DETERMINÍSTICO (SINÔNIMOS E BANCO FIXO)
 # ==========================================
 SINONIMOS = {
     "novalgina": "dipirona",
@@ -84,12 +84,10 @@ INTERACOES_FIXAS_GRAVES = {
 }
 
 def normalizar_medicamento(nome):
-    """Remove acentos, põe em minúsculas, limpa espaços e aplica sinónimos."""
+    """Remove acentos, põe em minúsculas, limpa espaços e aplica sinônimos."""
     if not nome: return ""
-    # Remove acentos
     n = ''.join(c for c in unicodedata.normalize('NFD', nome) if unicodedata.category(c) != 'Mn')
     n = n.lower().strip()
-    # Verifica dicionário de sinónimos
     return SINONIMOS.get(n, n)
 
 # ==========================================
@@ -262,7 +260,7 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 16.3 | Motor Determinístico")
+    st.caption("🚀 Versão 16.4 | Lógica UI Sólidos")
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.warning("⚠️ **AVISO LEGAL:** Este sistema é uma ferramenta de apoio à decisão clínica (SAD). Não substitui a avaliação do médico prescritor.")
@@ -315,17 +313,13 @@ with aba_rotina:
                     vias = vias_bruto if isinstance(vias_bruto, list) else [str(vias_bruto)]
                     st.caption(f"🛣️ Vias: {', '.join(vias).title()}")
                     
-                    # === NOVO: MOTOR DE CRUZAMENTO NORMALIZADO ===
+                    # Motor de cruzamento normalizado
                     nome_novo_norm = normalizar_medicamento(dados['nome_apresentacao'])
                     
-                    # Interações gravadas pela IA no banco de dados
                     ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
                     ia_moderadas = [normalizar_medicamento(i) for i in dados.get("interacoes_moderadas", [])]
                     
-                    # Interações Fixas (Rede de Segurança)
                     banco_fixo_graves = INTERACOES_FIXAS_GRAVES.get(nome_novo_norm, [])
-                    
-                    # Une tudo para não deixar escapar nada
                     todas_graves = list(set(ia_graves + banco_fixo_graves))
                     
                     conflitos_graves_encontrados = []
@@ -386,13 +380,17 @@ with aba_rotina:
                             log_acao(st.session_state['id_usuario_logado'], f"Solicitou Revisão Holística para paciente em uso de {len(medicamentos_em_uso)} fármacos.")
                         st.divider()
 
+                    # === NOVO: LÓGICA DE DOSE PARA LÍQUIDOS E SÓLIDOS ===
                     if permitir_prescricao:
                         unid_bruto = dados.get("unidade_medida", "ML")
                         unid = str(unid_bruto[0]).upper() if isinstance(unid_bruto, list) and unid_bruto else str(unid_bruto).upper()
                         dose_maxima = float(dados.get("dose_maxima_diaria_mg", 0))
+                        
+                        conc = dados.get("concentracao_mg_ml")
 
-                        if dados.get("concentracao_mg_ml") is not None:
-                            conc = float(dados["concentracao_mg_ml"])
+                        # Se for remédio LÍQUIDO/INJETÁVEL (Tem mg/ml)
+                        if conc is not None and float(conc) > 0:
+                            conc = float(conc)
                             if dados.get("dose_mg_kg") is not None:
                                 dose = peso_paciente * float(dados["dose_mg_kg"])
                                 st.info(f"⚖️ Dose base ({peso_paciente}kg): {dose}mg \n\n ➡️ **Administrar: {round(dose/conc, 2)} {unid}**")
@@ -404,7 +402,14 @@ with aba_rotina:
                                     st.error(f"❌ **ERRO DE PRESCRIÇÃO:** A dose de {d_pres}mg ultrapassa o limite seguro de {dose_maxima}mg/dia.")
                                 elif d_pres > 0 and conc > 0: 
                                     st.info(f"➡️ **Administrar: {round(d_pres/conc, 2)} {unid}**")
-                        else: st.warning("⚠️ Dados de concentração base incompletos.")
+                        
+                        # Se for COMPRIMIDO/SÓLIDO (Não tem mg/ml)
+                        else:
+                            d_pres = st.number_input("Dose a Prescrever (MG):", 0.0, step=50.0)
+                            if dose_maxima > 0 and d_pres > dose_maxima:
+                                st.error(f"❌ **ERRO DE PRESCRIÇÃO:** A dose de {d_pres}mg ultrapassa o limite seguro de {dose_maxima}mg/dia.")
+                            elif d_pres > 0: 
+                                st.info(f"➡️ **Administrar: {d_pres} mg (Unidade: {unid})**")
         
         with col_dir:
             if sel != "(Selecione...)" and ('permitir_prescricao' in locals() and permitir_prescricao):
