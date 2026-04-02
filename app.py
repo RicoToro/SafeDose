@@ -104,7 +104,7 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS (FORÇANDO BANCO NOVO)
+# GESTÃO DE BASE DE DADOS (SQLITE)
 # ==========================================
 DB_FILE = 'medsync_cloud_final.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
@@ -148,7 +148,6 @@ def carregar_dados():
     c.execute("SELECT id, dados FROM medicamentos")
     b_meds = {row[0]: json.loads(row[1]) for row in c.fetchall()}
     
-    # Tratamento de erro robusto para carregar pacientes
     try:
         c.execute("SELECT id, dados_criptografados FROM pacientes")
         b_pacs = {row[0]: descriptografar_dados(row[1]) for row in c.fetchall() if row[1]}
@@ -206,6 +205,27 @@ init_db()
 banco_usuarios, banco_medicamentos, banco_pacientes = carregar_dados()
 
 # ==========================================
+# MOTOR DA IA (BUSCA DINÂMICA DE MODELO)
+# ==========================================
+CHAVE_API = os.environ.get("GEMINI_API_KEY")
+
+@st.cache_data(show_spinner=False)
+def descobrir_modelo(chave):
+    if not chave: return None
+    genai.configure(api_key=chave)
+    try:
+        modelos_disponiveis = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        if 'gemini-1.5-pro-latest' in modelos_disponiveis: return 'gemini-1.5-pro-latest'
+        if 'gemini-1.5-pro' in modelos_disponiveis: return 'gemini-1.5-pro'
+        if 'gemini-pro' in modelos_disponiveis: return 'gemini-pro'
+        return modelos_disponiveis[0] 
+    except: 
+        return "gemini-pro" 
+
+modelo_valido = descobrir_modelo(CHAVE_API)
+model = genai.GenerativeModel(modelo_valido) if modelo_valido else None
+
+# ==========================================
 # SISTEMA DE LOGIN SEGURO & TIMEOUT
 # ==========================================
 if 'usuario_logado' not in st.session_state:
@@ -243,27 +263,6 @@ if st.session_state['usuario_logado'] is None:
     st.stop()
 else:
     st.session_state['ultimo_acesso'] = time.time()
-
-# ==========================================
-# MOTOR DA IA (BUSCA DINÂMICA DE MODELO)
-# ==========================================
-CHAVE_API = os.environ.get("GEMINI_API_KEY")
-
-@st.cache_data(show_spinner=False)
-def descobrir_modelo(chave):
-    if not chave: return None
-    genai.configure(api_key=chave)
-    try:
-        modelos_disponiveis = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        if 'gemini-1.5-pro-latest' in modelos_disponiveis: return 'gemini-1.5-pro-latest'
-        if 'gemini-1.5-pro' in modelos_disponiveis: return 'gemini-1.5-pro'
-        if 'gemini-pro' in modelos_disponiveis: return 'gemini-pro'
-        return modelos_disponiveis[0] 
-    except: 
-        return "gemini-pro" 
-
-modelo_valido = descobrir_modelo(CHAVE_API)
-model = genai.GenerativeModel(modelo_valido) if modelo_valido else None
 
 # ==========================================
 # BARRA LATERAL & SCORE DE RISCO BASE
@@ -324,19 +323,18 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 20.0 | Cloud Resilient Edition")
+    st.caption("🚀 Versão 20.0 | Clean Code Final")
 
 # ==========================================
-# GESTÃO DE ABAS E PERMISSÕES (RBAC BLINDADO)
+# GESTÃO DE ABAS E PERMISSÕES (RBAC)
 # ==========================================
 is_admin = (cargo == "ADM")
-is_medico = (cargo in ["Médico", "Medico"]) # Cobre erros de acentuação no cadastro!
+is_medico = (cargo in ["Médico", "Medico"]) 
 
 if is_admin: 
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin, aba_dashboard, aba_equipe, aba_auditoria = abas
 elif is_medico:
-    # Garante que o médico vê a aba Sistema!
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin = abas
 else: 
