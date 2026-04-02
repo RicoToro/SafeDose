@@ -125,10 +125,6 @@ def init_db():
     if not c.fetchone():
         c.execute("INSERT INTO usuarios VALUES (?, ?, ?, ?)", ('admin', 'Administrador de TI', hash_senha('admin'), 'ADM'))
     
-    c.execute("SELECT * FROM usuarios WHERE id='gui'")
-    if not c.fetchone():
-        c.execute("INSERT INTO usuarios VALUES (?, ?, ?, ?)", ('gui', 'Dr. Guilherme', hash_senha('gui'), 'Médico'))
-        
     conn.commit(); conn.close()
 
 def log_acao(usuario, acao):
@@ -269,8 +265,14 @@ else:
 # ==========================================
 with st.sidebar:
     st.title("MedSync ⚡")
-    cargo = st.session_state['cargo_usuario']
-    icone_cargo = "👨‍💻" if cargo == "ADM" else "👨‍⚕️" if cargo in ["Médico", "Medico"] else "🩺"
+    cargo = st.session_state.get('cargo_usuario', '')
+    
+    # Tratamento BLINDADO contra espaços e letras maiúsculas/minúsculas no Banco de Dados
+    cargo_seguro = str(cargo).strip().lower() if cargo else ""
+    is_admin = (cargo_seguro == "adm")
+    is_medico = (cargo_seguro == "médico" or cargo_seguro == "medico")
+    
+    icone_cargo = "👨‍💻" if is_admin else "👨‍⚕️" if is_medico else "🩺"
     st.success(f"{icone_cargo} **Plantão:** \n\n {st.session_state['usuario_logado']}\n\n*Perfil: {cargo}*")
     
     if st.button("🚪 Terminar Sessão", use_container_width=True):
@@ -323,14 +325,11 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 20.0 | Clean Code Final")
+    st.caption("🚀 Versão 20.1 | RBAC Bulletproof Edition")
 
 # ==========================================
 # GESTÃO DE ABAS E PERMISSÕES (RBAC)
 # ==========================================
-is_admin = (cargo == "ADM")
-is_medico = (cargo in ["Médico", "Medico"]) 
-
 if is_admin: 
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin, aba_dashboard, aba_equipe, aba_auditoria = abas
