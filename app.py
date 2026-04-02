@@ -104,9 +104,9 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS (SQLITE)
+# GESTÃO DE BASE DE DADOS (NOVO BANCO V21)
 # ==========================================
-DB_FILE = 'medsync_cloud_final.db'
+DB_FILE = 'medsync_v21.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -267,7 +267,6 @@ with st.sidebar:
     st.title("MedSync ⚡")
     cargo = st.session_state.get('cargo_usuario', '')
     
-    # Tratamento BLINDADO contra espaços e letras maiúsculas/minúsculas no Banco de Dados
     cargo_seguro = str(cargo).strip().lower() if cargo else ""
     is_admin = (cargo_seguro == "adm")
     is_medico = (cargo_seguro == "médico" or cargo_seguro == "medico")
@@ -325,10 +324,10 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 20.1 | RBAC Bulletproof Edition")
+    st.caption("🚀 Versão 21.0 | Tasy/DEF Standard Edition")
 
 # ==========================================
-# GESTÃO DE ABAS E PERMISSÕES (RBAC)
+# GESTÃO DE ABAS E PERMISSÕES
 # ==========================================
 if is_admin: 
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
@@ -357,7 +356,7 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO
+# ABA 2: PRESCRIÇÃO (COM INFORMAÇÕES CLÍNICAS TASY)
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -375,8 +374,16 @@ with aba_rotina:
                     st.markdown(f"### 💊 {dados['nome_apresentacao']}")
                     vias_bruto = dados.get("vias_permitidas", ["intravenosa"])
                     vias = vias_bruto if isinstance(vias_bruto, list) else [str(vias_bruto)]
-                    st.caption(f"🛣️ Vias: {', '.join(vias).title()}")
+                    st.caption(f"🛣️ Vias: {', '.join(vias).title()} | 🔬 Classe: {dados.get('classe_terapeutica', 'N/A')}")
                     
+                    # NOVO: PAINEL DE INFORMAÇÕES CLÍNICAS (PADRÃO DEF/TASY)
+                    with st.expander("📚 Informações Clínicas (Padrão DEF/Tasy)", expanded=False):
+                        st.write(f"**Ação Esperada:** {dados.get('acao_esperada', 'Não informada')}")
+                        efeitos = dados.get('efeitos_adversos', [])
+                        st.write(f"**Principais Efeitos Adversos:** {', '.join(efeitos) if efeitos else 'Não informados'}")
+                        if dados.get('tipo_diluicao'):
+                            st.info(f"💧 **Recomendação de Preparo/Diluição:** {dados.get('tipo_diluicao')}")
+
                     nome_norm = normalizar_medicamento(dados['nome_apresentacao'])
                     alergia_critica = False
                     
@@ -425,10 +432,6 @@ with aba_rotina:
                     elif score_final >= 1: st.warning("📊 **Risco Global da Prescrição: MODERADO**")
                     else: st.success("📉 **Risco Global da Prescrição: BAIXO**")
 
-                    with st.expander("ℹ️ Como este Score é calculado?"):
-                        st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave/Alergia (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
-
-                    # MOTOR DE SUGESTÃO DE ALTERNATIVA IA
                     if not permitir_prescricao:
                         st.markdown("---")
                         motivo = "Alergia" if alergia_critica else f"Interação com {', '.join(conflitos_graves_encontrados)}"
@@ -448,7 +451,6 @@ with aba_rotina:
                                     except:
                                         pass 
                     
-                    # Parecer IA Explicativo
                     elif 'conflitos_graves_encontrados' in locals() and (conflitos_graves_encontrados or conflitos_moderados_encontrados):
                         conflitos = conflitos_graves_encontrados + conflitos_moderados_encontrados
                         chave_risco = f"parecer_{dados['nome_apresentacao']}_{'_'.join(conflitos)}"
@@ -470,7 +472,6 @@ with aba_rotina:
 
                     st.divider()
 
-                    # Revisão Holística Avançada
                     if medicamentos_em_uso or alergias_paciente or comorbidades_paciente:
                         chave_holistica = f"holistico_{dados['nome_apresentacao']}_{'_'.join(medicamentos_em_uso)}_{'_'.join(alergias_paciente)}_{'_'.join(comorbidades_paciente)}"
                         
@@ -607,21 +608,33 @@ with aba_pacientes:
 if is_admin or is_medico:
     with aba_admin:
         st.markdown("### 🤖 Gestão Farmacológica")
-        st.info("💡 A arquitetura local já utiliza o padrão DAO (Data Access Object), permitindo migração para PostgreSQL sem alteração na regra de negócio.")
+        st.info("💡 Padrão DEF/Tasy: O motor de busca IA foi atualizado para focar na realidade clínica brasileira e instrução de diluição.")
         cad, rem = st.columns(2)
         with cad:
             with st.container(border=True):
                 st.markdown("#### Importação Inteligente (IA)")
-                st.caption("A IA fará o mapeamento farmacológico automático via API.")
+                st.caption("A IA mapeará a bula no formato clínico avançado.")
                 n_med = st.text_input("Princípio Ativo ou Medicamento:")
-                if st.button("Mapear Literatura", type="primary", use_container_width=True) and n_med:
+                if st.button("Mapear Literatura Clínica", type="primary", use_container_width=True) and n_med:
                     if model:
-                        with st.spinner(f"A consultar bases de dados para {n_med}..."):
-                            prompt = f"""Atue como o Farmacêutico Chefe de um hospital de alta complexidade no Brasil. 
+                        with st.spinner(f"A estruturar dados clínicos para {n_med}..."):
+                            prompt = f"""Atue como o Farmacêutico Clínico Chefe de um hospital de alta complexidade no Brasil, baseando-se no rigor do DEF (Dicionário de Especialidades Farmacêuticas) e padrões do sistema Philips Tasy.
 Sua tarefa é mapear '{n_med}' e retornar APENAS um JSON PURO. ZERO texto antes ou depois.
-Considere interações com medicamentos brasileiros comuns (ex: Dipirona).
-NUNCA use classes (ex: 'AINEs'). Liste os princípios ativos exatos.
-Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unidade_medida (string: ml/comprimido/ampola/gotas), alerta_iv (string/null), concentracao_mg_ml (float/null), dose_mg_kg (float/null), dose_maxima_diaria_mg (float com o limite máximo seguro em mg por dia, ou 0 se não aplicável), interacoes_graves (lista), interacoes_moderadas (lista)."""
+Atenção à realidade clínica brasileira (ex: Ibuprofeno é rotineiramente Oral/Gotas, quase nunca IV).
+Chaves obrigatórias:
+"nome_apresentacao" (string),
+"classe_terapeutica" (string),
+"acao_esperada" (string: resumo da farmacodinâmica),
+"efeitos_adversos" (lista de strings: principais reações),
+"vias_permitidas" (lista: rotas reais no Brasil),
+"unidade_medida" (string: ml/compr/ampola),
+"tipo_diluicao" (string/null: instrução breve de preparo, ex 'Diluir em 100ml de SF 0.9%'),
+"alerta_iv" (string/null),
+"concentracao_mg_ml" (float/null),
+"dose_mg_kg" (float/null),
+"dose_maxima_diaria_mg" (float ou 0),
+"interacoes_graves" (lista de principios ativos),
+"interacoes_moderadas" (lista de principios ativos)"""
                             try:
                                 res = model.generate_content(prompt, safety_settings=FILTROS_SEGURANCA)
                                 texto_limpo = res.text.replace('```json', '').replace('```', '').strip()
@@ -641,7 +654,7 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
                                         id_med = n_med.lower().replace(' ', '_')
                                         salvar_med_sql(id_med, dados_ia)
                                         log_acao(st.session_state['id_usuario_logado'], f"Mapeou novo medicamento via IA: {n_med}")
-                                        st.success("✅ Protocolo adicionado e guardado em SQL!")
+                                        st.success("✅ Protocolo Clínico salvo com sucesso!")
                                         time.sleep(1.5); st.rerun()
                                     else: 
                                         st.error("❌ Medicamento não encontrado nas bases.")
@@ -658,7 +671,7 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
         with rem:
             with st.container(border=True):
                 st.markdown("#### 🗑️ Remover Item")
-                if is_admin: # Somente ADM pode deletar
+                if is_admin: 
                     if banco_medicamentos:
                         m_del = st.selectbox("Selecione a medicação:", ["(Selecionar...)"] + [v["nome_apresentacao"] for v in banco_medicamentos.values()])
                         if m_del != "(Selecionar...)" and st.button("Excluir", use_container_width=True):
