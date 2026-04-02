@@ -63,19 +63,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# LGPD: MOTOR DE CRIPTOGRAFIA (NÍVEL PRODUÇÃO)
+# LGPD: MOTOR DE CRIPTOGRAFIA
 # ==========================================
 chave_env = os.environ.get("FERNET_KEY")
 CHAVE_CRIPTOGRAFIA = chave_env.encode() if chave_env else b'Kg8pP4Pj-8bV_9wz2X_Yq_Z3o8U1u_g4L5h-N_Q_vW4='
 cipher_suite = Fernet(CHAVE_CRIPTOGRAFIA)
 
 def criptografar_dados(dados_dict):
-    """Transforma o dicionário do paciente num Hash encriptado"""
     dados_json = json.dumps(dados_dict, ensure_ascii=False)
     return cipher_suite.encrypt(dados_json.encode('utf-8')).decode('utf-8')
 
 def descriptografar_dados(texto_cifrado):
-    """Desfaz o Hash para leitura isolada no sistema interno"""
     try:
         dados_json = cipher_suite.decrypt(texto_cifrado.encode('utf-8')).decode('utf-8')
         return json.loads(dados_json)
@@ -86,12 +84,8 @@ def descriptografar_dados(texto_cifrado):
 # MOTOR DETERMINÍSTICO (SINÓNIMOS E BANCO FIXO)
 # ==========================================
 SINONIMOS = {
-    "novalgina": "dipirona",
-    "dipirona sodica": "dipirona",
-    "dipirona monoidratada": "dipirona",
-    "tylenol": "paracetamol",
-    "aas": "aspirina",
-    "acido acetilsalicilico": "aspirina"
+    "novalgina": "dipirona", "dipirona sodica": "dipirona", "dipirona monoidratada": "dipirona",
+    "tylenol": "paracetamol", "aas": "aspirina", "acido acetilsalicilico": "aspirina"
 }
 
 INTERACOES_FIXAS_GRAVES = {
@@ -110,9 +104,9 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS (SQLITE)
+# GESTÃO DE BASE DE DADOS (FORÇANDO BANCO NOVO)
 # ==========================================
-DB_FILE = 'medsync_final.db'
+DB_FILE = 'medsync_cloud_final.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -154,8 +148,12 @@ def carregar_dados():
     c.execute("SELECT id, dados FROM medicamentos")
     b_meds = {row[0]: json.loads(row[1]) for row in c.fetchall()}
     
-    c.execute("SELECT id, dados_criptografados FROM pacientes")
-    b_pacs = {row[0]: descriptografar_dados(row[1]) for row in c.fetchall() if row[1]}
+    # Tratamento de erro robusto para carregar pacientes
+    try:
+        c.execute("SELECT id, dados_criptografados FROM pacientes")
+        b_pacs = {row[0]: descriptografar_dados(row[1]) for row in c.fetchall() if row[1]}
+    except:
+        b_pacs = {}
     
     conn.close()
     return b_usuarios, b_meds, b_pacs
@@ -273,7 +271,7 @@ model = genai.GenerativeModel(modelo_valido) if modelo_valido else None
 with st.sidebar:
     st.title("MedSync ⚡")
     cargo = st.session_state['cargo_usuario']
-    icone_cargo = "👨‍💻" if cargo == "ADM" else "👨‍⚕️" if cargo == "Médico" else "🩺"
+    icone_cargo = "👨‍💻" if cargo == "ADM" else "👨‍⚕️" if cargo in ["Médico", "Medico"] else "🩺"
     st.success(f"{icone_cargo} **Plantão:** \n\n {st.session_state['usuario_logado']}\n\n*Perfil: {cargo}*")
     
     if st.button("🚪 Terminar Sessão", use_container_width=True):
@@ -326,23 +324,22 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 19.1 | Clinical RBAC Edition")
+    st.caption("🚀 Versão 20.0 | Cloud Resilient Edition")
 
 # ==========================================
-# GESTÃO DE ABAS E PERMISSÕES (RBAC)
+# GESTÃO DE ABAS E PERMISSÕES (RBAC BLINDADO)
 # ==========================================
 is_admin = (cargo == "ADM")
-is_medico = (cargo == "Médico")
+is_medico = (cargo in ["Médico", "Medico"]) # Cobre erros de acentuação no cadastro!
 
-# ADMs e Médicos têm acesso à aba Sistema para adicionar remédios
 if is_admin: 
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin, aba_dashboard, aba_equipe, aba_auditoria = abas
 elif is_medico:
+    # Garante que o médico vê a aba Sistema!
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin = abas
 else: 
-    # Enfermeiros e outros não precisam mapear medicamentos novos
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes"])
     aba_emergencia, aba_rotina, aba_pacientes = abas
 
@@ -398,7 +395,7 @@ with aba_rotina:
                         st.error("🔒 **AÇÃO BLOQUEADA POR HISTÓRICO DE ALERGIA.**")
                         permitir_prescricao = False
                         score_interacao = 3
-                        log_acao(st.session_state['id_usuario_logado'], f"Ação Bloqueada: Alergia detetada ({dados['nome_apresentacao']})")
+                        log_acao(st.session_state['id_usuario_logado'], f"Ação Bloqueada: Alergia detectada ({dados['nome_apresentacao']})")
                     else:
                         ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
                         ia_moderadas = [normalizar_medicamento(i) for i in dados.get("interacoes_moderadas", [])]
@@ -434,9 +431,7 @@ with aba_rotina:
                     with st.expander("ℹ️ Como este Score é calculado?"):
                         st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave/Alergia (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
-                    # ==========================================
                     # MOTOR DE SUGESTÃO DE ALTERNATIVA IA
-                    # ==========================================
                     if not permitir_prescricao:
                         st.markdown("---")
                         motivo = "Alergia" if alergia_critica else f"Interação com {', '.join(conflitos_graves_encontrados)}"
