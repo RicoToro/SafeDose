@@ -65,7 +65,6 @@ st.markdown("""
 # ==========================================
 # LGPD: MOTOR DE CRIPTOGRAFIA (NÍVEL PRODUÇÃO)
 # ==========================================
-# Busca a chave nas variáveis de ambiente. Se não encontrar (para evitar que a demo bloqueie amanhã), usa o fallback.
 chave_env = os.environ.get("FERNET_KEY")
 CHAVE_CRIPTOGRAFIA = chave_env.encode() if chave_env else b'Kg8pP4Pj-8bV_9wz2X_Yq_Z3o8U1u_g4L5h-N_Q_vW4='
 cipher_suite = Fernet(CHAVE_CRIPTOGRAFIA)
@@ -327,17 +326,23 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 19.0 | Enterprise Security & Clinical AI")
+    st.caption("🚀 Versão 19.1 | Clinical RBAC Edition")
 
 # ==========================================
-# GESTÃO DE ABAS 
+# GESTÃO DE ABAS E PERMISSÕES (RBAC)
 # ==========================================
 is_admin = (cargo == "ADM")
+is_medico = (cargo == "Médico")
 
+# ADMs e Médicos têm acesso à aba Sistema para adicionar remédios
 if is_admin: 
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin, aba_dashboard, aba_equipe, aba_auditoria = abas
+elif is_medico:
+    abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
+    aba_emergencia, aba_rotina, aba_pacientes, aba_admin = abas
 else: 
+    # Enfermeiros e outros não precisam mapear medicamentos novos
     abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes"])
     aba_emergencia, aba_rotina, aba_pacientes = abas
 
@@ -358,7 +363,7 @@ with aba_emergencia:
         if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO (COM MOTOR DE SUGESTÃO IA)
+# ABA 2: PRESCRIÇÃO
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -430,7 +435,7 @@ with aba_rotina:
                         st.caption(f"**Paciente:** Idade ≥ 60 anos (+1 pt) | Polifarmácia ≥ 5 fármacos (+2 pts).\n\n**Interação atual:** Moderada (+1 pt) | Grave/Alergia (+3 pts).\n\n*Pontuação deste caso: {score_final} pontos.*")
 
                     # ==========================================
-                    # NOVO: MOTOR DE SUGESTÃO DE ALTERNATIVA IA
+                    # MOTOR DE SUGESTÃO DE ALTERNATIVA IA
                     # ==========================================
                     if not permitir_prescricao:
                         st.markdown("---")
@@ -449,7 +454,7 @@ with aba_rotina:
                                         salvar_cache_ia(chave_sug, res.text)
                                         st.success(f"💡 **Alternativa Segura Sugerida (IA):**\n\n{res.text}")
                                     except:
-                                        pass # Falha silenciosa para não estragar a demonstração
+                                        pass 
                     
                     # Parecer IA Explicativo
                     elif 'conflitos_graves_encontrados' in locals() and (conflitos_graves_encontrados or conflitos_moderados_encontrados):
@@ -601,13 +606,13 @@ with aba_pacientes:
                 if p_del != "(Selecionar...)" and st.button("Confirmar Alta", use_container_width=True):
                     ch_del = next(k for k,v in banco_pacientes.items() if v and v.get("nome")==p_del)
                     deletar_paciente_sql(ch_del)
-                    log_acao(st.session_state['id_usuario_logado'], "Concedeu alta ao paciente")
+                    log_acao(st.session_state['id_usuario_logado'], f"Concedeu alta ao paciente")
                     st.success("✅ Alta realizada e dados deletados!"); time.sleep(1); st.rerun()
 
 # ==========================================
-# ABAS ADMIN: SISTEMA, DASHBOARD E AUDITORIA
+# ABA 4: SISTEMA (Acessível a ADM e Médicos)
 # ==========================================
-if is_admin:
+if is_admin or is_medico:
     with aba_admin:
         st.markdown("### 🤖 Gestão Farmacológica")
         st.info("💡 A arquitetura local já utiliza o padrão DAO (Data Access Object), permitindo migração para PostgreSQL sem alteração na regra de negócio.")
@@ -661,16 +666,23 @@ Chaves obrigatórias: nome_apresentacao (string), vias_permitidas (lista), unida
         with rem:
             with st.container(border=True):
                 st.markdown("#### 🗑️ Remover Item")
-                if banco_medicamentos:
-                    m_del = st.selectbox("Selecione a medicação:", ["(Selecionar...)"] + [v["nome_apresentacao"] for v in banco_medicamentos.values()])
-                    if m_del != "(Selecionar...)" and st.button("Excluir", use_container_width=True):
-                        ch_m_del = next(k for k,v in banco_medicamentos.items() if v["nome_apresentacao"]==m_del)
-                        deletar_med_sql(ch_m_del)
-                        log_acao(st.session_state['id_usuario_logado'], f"Removeu medicamento: {m_del}")
-                        st.success("🗑️ Protocolo removido permanentemente.")
-                        time.sleep(1)
-                        st.rerun()
+                if is_admin: # Somente ADM pode deletar
+                    if banco_medicamentos:
+                        m_del = st.selectbox("Selecione a medicação:", ["(Selecionar...)"] + [v["nome_apresentacao"] for v in banco_medicamentos.values()])
+                        if m_del != "(Selecionar...)" and st.button("Excluir", use_container_width=True):
+                            ch_m_del = next(k for k,v in banco_medicamentos.items() if v["nome_apresentacao"]==m_del)
+                            deletar_med_sql(ch_m_del)
+                            log_acao(st.session_state['id_usuario_logado'], f"Removeu medicamento: {m_del}")
+                            st.success("🗑️ Protocolo removido permanentemente.")
+                            time.sleep(1)
+                            st.rerun()
+                else:
+                    st.info("🔒 Apenas Administradores de TI podem remover medicamentos da base.")
 
+# ==========================================
+# ABAS ADMIN: DASHBOARD, EQUIPA E AUDITORIA
+# ==========================================
+if is_admin:
     with aba_dashboard:
         st.markdown("### 📊 Visão Geral da Gestão Hospitalar (KPIs)")
         st.caption("Métricas em tempo real geradas com base na utilização clínica do MedSync.")
