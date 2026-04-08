@@ -105,9 +105,9 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS (V22 - COM ALTURA/IMC)
+# GESTÃO DE BASE DE DADOS (V23 - CLEAN CACHE)
 # ==========================================
-DB_FILE = 'medsync_v22.db'
+DB_FILE = 'medsync_v23.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -302,7 +302,6 @@ with st.sidebar:
         alergias_paciente = dados_pac.get("alergias", [])
         comorbidades_paciente = dados_pac.get("comorbidades", [])
         
-        # CÁLCULO DE IMC CLÍNICO
         if altura_paciente > 0:
             imc_atual = peso_paciente / (altura_paciente ** 2)
             if imc_atual < 18.5: status_imc = "Baixo Peso"
@@ -347,66 +346,112 @@ with st.sidebar:
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 22.0 | Advanced Enterprise Edition")
+    st.caption("🚀 Versão 23.0 | Protocolos de Emergência Avançados")
 
 # ==========================================
 # GESTÃO DE ABAS E PERMISSÕES 
 # ==========================================
 if is_admin: 
-    abas = st.tabs(["🚨 Código Azul (AHA)", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
+    abas = st.tabs(["🚨 Central de Emergência", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin, aba_dashboard, aba_equipe, aba_auditoria = abas
 elif is_medico:
-    abas = st.tabs(["🚨 Código Azul (AHA)", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
+    abas = st.tabs(["🚨 Central de Emergência", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin = abas
 else: 
-    abas = st.tabs(["🚨 Código Azul (AHA)", "📋 Prescrição", "👥 Pacientes"])
+    abas = st.tabs(["🚨 Central de Emergência", "📋 Prescrição", "👥 Pacientes"])
     aba_emergencia, aba_rotina, aba_pacientes = abas
 
 # ==========================================
-# ABA 1: EMERGÊNCIA (PADRÃO AHA/DEF AVANÇADO)
+# ABA 1: CENTRAL DE EMERGÊNCIA (MÚLTIPLOS PROTOCOLOS)
 # ==========================================
 with aba_emergencia:
     st.markdown("""<style>button[kind="primary"] { height: 60px; border-radius: 8px !important; font-weight: bold !important; font-size: 1.1rem !important; }</style>""", unsafe_allow_html=True)
-    st.error("🚨 PROTOCOLO DE PARADA CARDIORRESPIRATÓRIA (PCR) - DIRETRIZES AHA")
     
     is_adulto = peso_paciente >= 40.0
-    st.info(f"**Paciente:** {'Adulto' if is_adulto else 'Pediátrico'} | **Peso:** {peso_paciente} kg | **Vias Preferenciais:** Acesso IV periférico ou Intraósseo (IO).")
+    tipo_paciente = 'Adulto' if is_adulto else 'Pediátrico'
+    
+    st.error(f"🚨 **CENTRAL DE EMERGÊNCIA (CÓDIGO AZUL)** | Paciente: **{tipo_paciente}** | Peso base: **{peso_paciente} kg**")
+    
+    protocolo = st.radio("Selecione o Protocolo Clínico de Emergência:", 
+                         ["🫀 Parada Cardiorrespiratória (PCR - AHA)", 
+                          "🛑 Choque Anafilático Severo", 
+                          "💔 Infarto Agudo do Miocárdio (IAM)", 
+                          "🧠 Crise Convulsiva (Mal Epiléptico)"], 
+                         horizontal=True)
+                         
+    st.markdown("---")
 
-    col_chocavel, col_nao_chocavel = st.columns(2)
+    if protocolo == "🫀 Parada Cardiorrespiratória (PCR - AHA)":
+        st.info("Vias Preferenciais: Acesso IV periférico ou Intraósseo (IO).")
+        col_chocavel, col_nao_chocavel = st.columns(2)
 
-    with col_chocavel:
-        with st.container(border=True):
-            st.markdown("### ⚡ RITMOS CHOCÁVEIS")
-            st.caption("Fibrilação Ventricular (FV) / Taquicardia Ventricular sem pulso (TVsp)")
-            
-            st.markdown("**1º Fármaco - Vasopressor:**")
-            if st.button("💉 EPINEFRINA (Adrenalina)", use_container_width=True, type="primary"):
-                if is_adulto: st.success("✅ **DOSE:** 1 mg (1 ampola de 1mg/ml)\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n💧 **Preparo/Enfermagem:** Administrar em Bolus IV rápido, seguido de Flush de 20ml de SF 0,9% e elevação do membro por 10 a 20 segundos.")
-                else: st.success(f"✅ **DOSE PEDIÁTRICA (0.01 mg/kg):** {round(peso_paciente * 0.01, 2)} mg\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n💧 **Preparo:** Concentração padrão 1:10.000 (0.1 mg/mL).")
-            
-            st.markdown("**2º Fármaco - Antiarrítmico:**")
-            if st.button("🫀 AMIODARONA", use_container_width=True, type="primary"):
-                if is_adulto: st.success("✅ **1ª DOSE:** 300 mg (2 ampolas) em Bolus.\n\n✅ **2ª DOSE:** 150 mg (1 ampola) após 3-5 min se FV/TVsp persistir.\n\n💧 **Preparo/Enfermagem:** Pode ser diluído em 20ml a 30ml de SG 5% (Evitar SF 0,9%).")
-                else: st.success(f"✅ **DOSE PEDIÁTRICA (5 mg/kg):** {round(peso_paciente * 5.0, 2)} mg em bolus.\n\n🔄 Pode repetir até 3 vezes.")
+        with col_chocavel:
+            with st.container(border=True):
+                st.markdown("### ⚡ RITMOS CHOCÁVEIS")
+                st.caption("Fibrilação Ventricular (FV) / Taquicardia Ventricular sem pulso (TVsp)")
                 
-            if st.button("🩸 LIDOCAÍNA (Alternativa)", use_container_width=True):
-                if is_adulto: st.success(f"✅ **DOSE (1 a 1.5 mg/kg):** {round(peso_paciente * 1.0, 1)} a {round(peso_paciente * 1.5, 1)} mg na 1ª dose.\n\n🔄 Se necessário: 0.5 a 0.75 mg/kg a cada 5-10 min.")
-                else: st.success(f"✅ **DOSE PEDIÁTRICA:** 1 mg/kg ({round(peso_paciente * 1.0, 1)} mg).")
+                st.markdown("**1º Fármaco - Vasopressor:**")
+                if st.button("💉 HEMITARTARATO DE EPINEFRINA", use_container_width=True, type="primary"):
+                    if is_adulto: st.success("✅ **DOSE:** 1 mg (1 ampola de 1mg/ml)\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n💧 **Preparo/Enfermagem:** Administrar em Bolus IV rápido, seguido de Flush de 20ml de SF 0,9% e elevação do membro por 10 a 20 segundos.")
+                    else: st.success(f"✅ **DOSE PEDIÁTRICA (0.01 mg/kg):** {round(peso_paciente * 0.01, 2)} mg\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n💧 **Preparo:** Concentração padrão 1:10.000 (0.1 mg/mL).")
+                
+                st.markdown("**2º Fármaco - Antiarrítmico:**")
+                if st.button("🫀 CLORIDRATO DE AMIODARONA", use_container_width=True, type="primary"):
+                    if is_adulto: st.success("✅ **1ª DOSE:** 300 mg (2 ampolas) em Bolus.\n\n✅ **2ª DOSE:** 150 mg (1 ampola) após 3-5 min se FV/TVsp persistir.\n\n💧 **Preparo/Enfermagem:** Pode ser diluído em 20ml a 30ml de SG 5% (Evitar SF 0,9%).")
+                    else: st.success(f"✅ **DOSE PEDIÁTRICA (5 mg/kg):** {round(peso_paciente * 5.0, 2)} mg em bolus.\n\n🔄 Pode repetir até 3 vezes.")
+                    
+                if st.button("🩸 CLORIDRATO DE LIDOCAÍNA (Alternativa)", use_container_width=True):
+                    if is_adulto: st.success(f"✅ **DOSE (1 a 1.5 mg/kg):** {round(peso_paciente * 1.0, 1)} a {round(peso_paciente * 1.5, 1)} mg na 1ª dose.\n\n🔄 Se necessário: 0.5 a 0.75 mg/kg a cada 5-10 min.")
+                    else: st.success(f"✅ **DOSE PEDIÁTRICA:** 1 mg/kg ({round(peso_paciente * 1.0, 1)} mg).")
 
-    with col_nao_chocavel:
-        with st.container(border=True):
-            st.markdown("### 📉 RITMOS NÃO-CHOCÁVEIS")
-            st.caption("Assistolia / Atividade Elétrica Sem Pulso (AESP)")
-            
-            st.markdown("**Fármaco Principal:**")
-            if st.button("💉 EPINEFRINA (Imediata)", key="epi_nc", use_container_width=True, type="primary"):
-                if is_adulto: st.success("✅ **DOSE:** 1 mg (1 ampola de 1mg/ml)\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n⚠️ Em Assistolia/AESP, administrar o mais rápido possível.")
-                else: st.success(f"✅ **DOSE PEDIÁTRICA:** {round(peso_paciente * 0.01, 2)} mg.")
-            
-            st.markdown("**Tratamento de Bradicardia Sintomática:**")
-            if st.button("🐢 ATROPINA", use_container_width=True):
-                if is_adulto: st.success("✅ **DOSE:** 1 mg em bolus IV.\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n🛑 **Dose Máxima Acumulada:** 3 mg.")
-                else: st.success(f"✅ **DOSE PEDIÁTRICA:** 0.02 mg/kg ({round(peso_paciente * 0.02, 2)} mg).\n\n🛑 Dose mínima: 0.1 mg. Dose máxima: 0.5 mg.")
+        with col_nao_chocavel:
+            with st.container(border=True):
+                st.markdown("### 📉 RITMOS NÃO-CHOCÁVEIS")
+                st.caption("Assistolia / Atividade Elétrica Sem Pulso (AESP)")
+                
+                st.markdown("**Fármaco Principal:**")
+                if st.button("💉 HEMITARTARATO DE EPINEFRINA (Imediata)", key="epi_nc", use_container_width=True, type="primary"):
+                    if is_adulto: st.success("✅ **DOSE:** 1 mg (1 ampola de 1mg/ml)\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n⚠️ Em Assistolia/AESP, administrar o mais rápido possível.")
+                    else: st.success(f"✅ **DOSE PEDIÁTRICA:** {round(peso_paciente * 0.01, 2)} mg.")
+                
+                st.markdown("**Tratamento de Bradicardia Sintomática:**")
+                if st.button("🐢 SULFATO DE ATROPINA", use_container_width=True):
+                    if is_adulto: st.success("✅ **DOSE:** 1 mg em bolus IV.\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n🛑 **Dose Máxima Acumulada:** 3 mg.")
+                    else: st.success(f"✅ **DOSE PEDIÁTRICA:** 0.02 mg/kg ({round(peso_paciente * 0.02, 2)} mg).\n\n🛑 Dose mínima: 0.1 mg. Dose máxima: 0.5 mg.")
+
+    elif protocolo == "🛑 Choque Anafilático Severo":
+        st.warning("⚠️ **Atenção:** A Epinefrina IM é o tratamento de primeira linha para anafilaxia. Não atrase sua administração.")
+        c1, c2, c3 = st.columns(3)
+        if c1.button("💉 EPINEFRINA INTRAMUSCULAR", use_container_width=True, type="primary"):
+            if is_adulto: st.success("✅ **DOSE:** 0.3 a 0.5 mg IM (músculo vasto lateral da coxa).\n\n🔄 **Frequência:** Repetir a cada 5 a 15 minutos se não houver melhora clínica.")
+            else: st.success(f"✅ **DOSE PEDIÁTRICA (0.01 mg/kg):** {round(peso_paciente * 0.01, 2)} mg IM (máximo 0.3 mg/dose).")
+        if c2.button("💊 CLORIDRATO DE PROMETAZINA", use_container_width=True):
+            st.success("✅ **DOSE (Anti-histamínico H1):** 25 a 50 mg IM profundo ou IV lento (diluído).\n\n⚠️ **Atenção:** Apenas como terapia adjuvante, nunca substitui a Epinefrina.")
+        if c3.button("🧪 SUCCINATO SÓDICO DE HIDROCORTISONA", use_container_width=True):
+            if is_adulto: st.success("✅ **DOSE (Corticoide):** 200 a 500 mg IV lento.\n\n⚠️ **Objetivo:** Prevenir fase tardia/bifásica da anafilaxia.")
+            else: st.success(f"✅ **DOSE PEDIÁTRICA (5-10 mg/kg):** {round(peso_paciente * 5.0, 1)} a {round(peso_paciente * 10.0, 1)} mg IV.")
+
+    elif protocolo == "💔 Infarto Agudo do Miocárdio (IAM)":
+        st.info("Protocolo MONA (Morfina, Oxigênio, Nitrato, Aspirina). *Avaliar contraindicações antes da administração.*")
+        c1, c2 = st.columns(2)
+        if c1.button("💊 ÁCIDO ACETILSALICÍLICO (AAS)", use_container_width=True, type="primary"):
+            st.success("✅ **DOSE DE ATAQUE:** 160 a 325 mg (Mastigar e engolir).\n\n⚠️ **Contraindicação:** Alergia a AAS, sangramento ativo ou úlcera péptica ativa.")
+        if c1.button("🌬️ OXIGENIOTERAPIA", use_container_width=True):
+            st.success("✅ **INDICAÇÃO:** Apenas se SatO2 < 90% ou paciente com dispneia/insuficiência cardíaca.\n\n💧 **Método:** Cateter nasal 2-4 L/min.")
+        if c2.button("🩸 NITRATO (Nitroglicerina/Isossorbida)", use_container_width=True, type="primary"):
+            st.success("✅ **DOSE SUBLINGUAL:** 5 mg sob a língua.\n\n🔄 **Frequência:** A cada 5 minutos (Máximo 3 doses).\n\n🛑 **Atenção:** Evitar se PAS < 90 mmHg, IAM de Ventrículo Direito ou uso recente de inibidores da fosfodiesterase (ex: Sildenafila).")
+        if c2.button("💉 SULFATO DE MORFINA", use_container_width=True):
+            st.success("✅ **DOSE:** 2 a 4 mg IV lento.\n\n🔄 **Frequência:** A cada 5 a 15 minutos até alívio da dor.\n\n⚠️ **Atenção:** Usar com cautela; pode mascarar sintomas isquêmicos e causar hipotensão.")
+
+    elif protocolo == "🧠 Crise Convulsiva (Mal Epiléptico)":
+        st.info("Objetivo: Interromper a crise clínica/eletrográfica o mais rápido possível e proteger via aérea.")
+        c1, c2 = st.columns(2)
+        if c1.button("💉 DIAZEPAM (1ª Linha IV)", use_container_width=True, type="primary"):
+            if is_adulto: st.success("✅ **DOSE (Benzodiazepínico):** 10 mg IV lento (2 a 5 mg/min).\n\n🔄 **Frequência:** Pode repetir após 5 minutos.\n\n🛑 **Atenção:** Risco de depressão respiratória.")
+            else: st.success(f"✅ **DOSE PEDIÁTRICA (0.1 a 0.3 mg/kg):** {round(peso_paciente * 0.2, 1)} mg IV lento.")
+        if c2.button("💉 MIDAZOLAM (Alternativa IM/Intranasal)", use_container_width=True, type="primary"):
+            if is_adulto: st.success("✅ **DOSE:** 10 mg Intramuscular (IM).\n\n💡 **Indicação:** Ideal quando não há acesso venoso imediato disponível.")
+            else: st.success(f"✅ **DOSE PEDIÁTRICA:** 0.2 mg/kg ({round(peso_paciente * 0.2, 1)} mg) Intranasal ou IM.")
 
 # ==========================================
 # ABA 2: PRESCRIÇÃO E INFORMAÇÕES TASY
