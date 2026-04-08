@@ -105,9 +105,9 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS (V23 - CLEAN CACHE)
+# GESTÃO DE BASE DE DADOS (V24 - PRÁTICO)
 # ==========================================
-DB_FILE = 'medsync_v23.db'
+DB_FILE = 'medsync_v24.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -275,16 +275,10 @@ with st.sidebar:
     icone_cargo = "👨‍💻" if is_admin else "👨‍⚕️" if is_medico else "🩺"
     st.success(f"{icone_cargo} **Plantão:** \n\n {st.session_state['usuario_logado']}\n\n*Perfil: {cargo}*")
     
-    if st.button("🚪 Terminar Sessão", use_container_width=True):
-        log_acao(st.session_state['id_usuario_logado'], "Logout")
-        st.session_state['usuario_logado'] = None
-        st.session_state['cargo_usuario'] = None
-        st.rerun()
-        
     st.markdown("---")
-    st.markdown("### 🏥 Triagem do Paciente")
+    st.markdown("### 🏥 Paciente Atual")
     lista_pacientes = [info.get("nome", "Desconhecido") for info in banco_pacientes.values() if info]
-    pac_sel = st.selectbox("Procurar Prontuário:", ["(Avulso / Urgência)"] + lista_pacientes)
+    pac_sel = st.selectbox("Procurar Prontuário:", ["(Avulso / Triagem Rápida)"] + lista_pacientes)
     
     idade_paciente_atual = 0
     score_base = 0 
@@ -293,7 +287,7 @@ with st.sidebar:
     imc_atual = 0.0
     status_imc = ""
     
-    if pac_sel != "(Avulso / Urgência)":
+    if pac_sel != "(Avulso / Triagem Rápida)":
         dados_pac = next(v for v in banco_pacientes.values() if v and v.get("nome") == pac_sel)
         peso_paciente = float(dados_pac.get("peso", 70.0))
         altura_paciente = float(dados_pac.get("altura", 1.70))
@@ -315,7 +309,7 @@ with st.sidebar:
         col_m2.metric("Alt.", f"{altura_paciente}m")
         col_m3.metric("IMC", f"{imc_atual:.1f}")
         
-        if status_imc == "Obesidade": st.warning("⚠️ Risco Sistêmico: Obesidade (Ajuste de dose hidrofílica/lipofílica pode ser necessário)")
+        if status_imc == "Obesidade": st.warning("⚠️ Risco Sistêmico: Obesidade")
         
         if alergias_paciente and "Nenhuma" not in alergias_paciente: 
             st.error(f"🛑 **Alergias:** {', '.join(alergias_paciente)}")
@@ -324,19 +318,20 @@ with st.sidebar:
         if medicamentos_em_uso: 
             st.info(f"💊 **Em uso:**\n {', '.join(medicamentos_em_uso)}")
     else:
-        col_pa1, col_pa2 = st.columns(2)
-        peso_paciente = col_pa1.number_input("Peso (kg):", 1.0, 250.0, 70.0, 0.5)
-        altura_paciente = col_pa2.number_input("Altura (m):", 0.50, 2.50, 1.70, 0.01)
-        idade_paciente_atual = st.number_input("Idade (anos):", 0, 120, 30)
-        
-        if altura_paciente > 0:
-            imc_atual = peso_paciente / (altura_paciente ** 2)
-            if imc_atual >= 30: status_imc = "Obesidade"
+        with st.expander("Preenchimento Manual (Urgência)", expanded=True):
+            col_pa1, col_pa2 = st.columns(2)
+            peso_paciente = col_pa1.number_input("Peso (kg):", 1.0, 250.0, 70.0, 0.5)
+            altura_paciente = col_pa2.number_input("Altura (m):", 0.50, 2.50, 1.70, 0.01)
+            idade_paciente_atual = st.number_input("Idade (anos):", 0, 120, 30)
+            
+            if altura_paciente > 0:
+                imc_atual = peso_paciente / (altura_paciente ** 2)
+                if imc_atual >= 30: status_imc = "Obesidade"
 
-        alergias_paciente = st.multiselect("Alergias conhecidas:", ["Nenhuma", "Penicilina", "AINEs", "Sulfa", "Iodo", "Látex", "Outras"])
-        comorbidades_paciente = st.multiselect("Comorbidades:", ["Nenhuma", "HAS", "DM", "IRC", "Asma", "Outras"])
-        lista_remedios = [v["nome_apresentacao"] for v in banco_medicamentos.values()]
-        medicamentos_em_uso = st.multiselect("O que o paciente já toma?", lista_remedios)
+            alergias_paciente = st.multiselect("Alergias conhecidas:", ["Nenhuma", "Penicilina", "AINEs", "Sulfa", "Iodo", "Látex", "Outras"])
+            comorbidades_paciente = st.multiselect("Comorbidades:", ["Nenhuma", "HAS", "DM", "IRC", "Asma", "Outras"])
+            lista_remedios = [v["nome_apresentacao"] for v in banco_medicamentos.values()]
+            medicamentos_em_uso = st.multiselect("O que o paciente já toma?", lista_remedios)
 
     if idade_paciente_atual >= 60: score_base += 1
     if status_imc == "Obesidade": score_base += 1
@@ -345,8 +340,13 @@ with st.sidebar:
         st.error("⚠️ **POLIFARMÁCIA DETETADA**")
 
     st.markdown("---")
-    if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 23.0 | Protocolos de Emergência Avançados")
+    if st.button("🚪 Sair do Sistema", use_container_width=True):
+        log_acao(st.session_state['id_usuario_logado'], "Logout")
+        st.session_state['usuario_logado'] = None
+        st.session_state['cargo_usuario'] = None
+        st.rerun()
+        
+    st.caption("🚀 Versão 24.0 | Smart Prescription UI")
 
 # ==========================================
 # GESTÃO DE ABAS E PERMISSÕES 
@@ -454,7 +454,7 @@ with aba_emergencia:
             else: st.success(f"✅ **DOSE PEDIÁTRICA:** 0.2 mg/kg ({round(peso_paciente * 0.2, 1)} mg) Intranasal ou IM.")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO E INFORMAÇÕES TASY
+# ABA 2: PRESCRIÇÃO E RECEITUÁRIO INTELIGENTE
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -589,20 +589,31 @@ with aba_rotina:
                                 log_acao(st.session_state['id_usuario_logado'], "Solicitou Revisão Holística Avançada.")
                         st.divider()
 
+                    # ==========================================
+                    # RECEITUÁRIO INTELIGENTE (COPY & PASTE)
+                    # ==========================================
                     if permitir_prescricao:
+                        st.markdown("#### 📝 Cálculo de Dose e Receituário")
                         unid_bruto = dados.get("unidade_medida", "ML")
                         unid = str(unid_bruto[0]).upper() if isinstance(unid_bruto, list) and unid_bruto else str(unid_bruto).upper()
                         dose_maxima = float(dados.get("dose_maxima_diaria_mg", 0))
                         conc = dados.get("concentracao_mg_ml")
 
                         if conc is not None and float(conc) > 0:
-                            d_pres = st.number_input("Dose Médica (MG):", 0.0, value=float(conc))
+                            d_pres = st.number_input("Dose Desejada (MG):", 0.0, value=float(conc))
                             if dose_maxima > 0 and d_pres > dose_maxima: st.error("❌ ERRO: Dose Máxima Ultrapassada.")
-                            elif d_pres > 0: st.info(f"➡️ **Administrar: {round(d_pres/float(conc), 2)} {unid}**")
+                            elif d_pres > 0: 
+                                qtd_administrar = round(d_pres/float(conc), 2)
+                                st.info(f"➡️ **Administrar: {qtd_administrar} {unid}**")
+                                st.markdown("📄 **Copiar para o Prontuário Eletrônico:**")
+                                st.code(f"{dados['nome_apresentacao'].upper()} ............... {qtd_administrar} {unid} via {vias[0].upper()}", language="text")
                         else:
                             d_pres = st.number_input("Dose a Prescrever (MG):", 0.0, step=50.0)
                             if dose_maxima > 0 and d_pres > dose_maxima: st.error("❌ ERRO: Dose Máxima Ultrapassada.")
-                            elif d_pres > 0: st.info(f"➡️ **Administrar: {d_pres} mg**")
+                            elif d_pres > 0: 
+                                st.info(f"➡️ **Administrar: {d_pres} mg**")
+                                st.markdown("📄 **Copiar para o Prontuário Eletrônico:**")
+                                st.code(f"{dados['nome_apresentacao'].upper()} ............... {d_pres} mg via {vias[0].upper()}", language="text")
         
         with col_dir:
             if sel != "(Selecione...)" and ('permitir_prescricao' in locals() and permitir_prescricao):
@@ -616,6 +627,9 @@ with aba_rotina:
                         if st.button("Calcular Vazão", use_container_width=True):
                             gts = math.ceil(vol/(tmp*3)) if un_t=="Horas" else math.ceil((vol*20)/tmp)
                             st.metric("Velocidade de Infusão", f"{gts} gts/min")
+                            # Adiciona o cálculo ao receituário também!
+                            st.caption("Adicionar instrução à prescrição:")
+                            st.code(f"Diluir em {vol}ml e correr a {gts} gotas/min.", language="text")
     else: st.info("A base de dados de medicamentos está vazia.")
 
 # ==========================================
