@@ -58,7 +58,7 @@ st.markdown("""
     button[data-baseweb="tab"][aria-selected="true"] { border-bottom: 3px solid #0056b3 !important; color: #0056b3 !important; }
 
     .stAlert { border-radius: 12px !important; border: none !important; box-shadow: 0 2px 8px rgba(0,0,0,0.04) !important; }
-    div[data-testid="stMetricValue"] { font-size: 2.2rem; font-weight: 800; color: #0056b3; }
+    div[data-testid="stMetricValue"] { font-size: 1.8rem; font-weight: 800; color: #0056b3; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -85,7 +85,8 @@ def descriptografar_dados(texto_cifrado):
 # ==========================================
 SINONIMOS = {
     "novalgina": "dipirona", "dipirona sodica": "dipirona", "dipirona monoidratada": "dipirona",
-    "tylenol": "paracetamol", "aas": "aspirina", "acido acetilsalicilico": "aspirina"
+    "tylenol": "paracetamol", "aas": "aspirina", "acido acetilsalicilico": "aspirina",
+    "adrenalina": "epinefrina"
 }
 
 INTERACOES_FIXAS_GRAVES = {
@@ -104,9 +105,9 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS (NOVO BANCO V21)
+# GESTÃO DE BASE DE DADOS (V22 - COM ALTURA/IMC)
 # ==========================================
-DB_FILE = 'medsync_v21.db'
+DB_FILE = 'medsync_v22.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -201,7 +202,7 @@ init_db()
 banco_usuarios, banco_medicamentos, banco_pacientes = carregar_dados()
 
 # ==========================================
-# MOTOR DA IA (BUSCA DINÂMICA DE MODELO)
+# MOTOR DA IA 
 # ==========================================
 CHAVE_API = os.environ.get("GEMINI_API_KEY")
 
@@ -261,7 +262,7 @@ else:
     st.session_state['ultimo_acesso'] = time.time()
 
 # ==========================================
-# BARRA LATERAL & SCORE DE RISCO BASE
+# BARRA LATERAL & BIOMETRIA (PESO + ALTURA + IMC)
 # ==========================================
 with st.sidebar:
     st.title("MedSync ⚡")
@@ -289,19 +290,33 @@ with st.sidebar:
     score_base = 0 
     alergias_paciente = []
     comorbidades_paciente = []
+    imc_atual = 0.0
+    status_imc = ""
     
     if pac_sel != "(Avulso / Urgência)":
         dados_pac = next(v for v in banco_pacientes.values() if v and v.get("nome") == pac_sel)
         peso_paciente = float(dados_pac.get("peso", 70.0))
+        altura_paciente = float(dados_pac.get("altura", 1.70))
         idade_paciente_atual = int(dados_pac.get('idade', 0))
         medicamentos_em_uso = dados_pac.get("uso_continuo", [])
         alergias_paciente = dados_pac.get("alergias", [])
         comorbidades_paciente = dados_pac.get("comorbidades", [])
         
+        # CÁLCULO DE IMC CLÍNICO
+        if altura_paciente > 0:
+            imc_atual = peso_paciente / (altura_paciente ** 2)
+            if imc_atual < 18.5: status_imc = "Baixo Peso"
+            elif imc_atual < 25: status_imc = "Eutrófico"
+            elif imc_atual < 30: status_imc = "Sobrepeso"
+            else: status_imc = "Obesidade"
+        
         st.markdown(f"**👤 {dados_pac['nome']}**")
-        col_m1, col_m2 = st.columns(2)
+        col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("Peso", f"{peso_paciente}kg")
-        col_m2.metric("Idade", f"{idade_paciente_atual}a")
+        col_m2.metric("Alt.", f"{altura_paciente}m")
+        col_m3.metric("IMC", f"{imc_atual:.1f}")
+        
+        if status_imc == "Obesidade": st.warning("⚠️ Risco Sistêmico: Obesidade (Ajuste de dose hidrofílica/lipofílica pode ser necessário)")
         
         if alergias_paciente and "Nenhuma" not in alergias_paciente: 
             st.error(f"🛑 **Alergias:** {', '.join(alergias_paciente)}")
@@ -310,53 +325,91 @@ with st.sidebar:
         if medicamentos_em_uso: 
             st.info(f"💊 **Em uso:**\n {', '.join(medicamentos_em_uso)}")
     else:
-        peso_paciente = st.number_input("Peso Atual (kg):", 1.0, 250.0, 70.0, 0.5)
+        col_pa1, col_pa2 = st.columns(2)
+        peso_paciente = col_pa1.number_input("Peso (kg):", 1.0, 250.0, 70.0, 0.5)
+        altura_paciente = col_pa2.number_input("Altura (m):", 0.50, 2.50, 1.70, 0.01)
         idade_paciente_atual = st.number_input("Idade (anos):", 0, 120, 30)
+        
+        if altura_paciente > 0:
+            imc_atual = peso_paciente / (altura_paciente ** 2)
+            if imc_atual >= 30: status_imc = "Obesidade"
+
         alergias_paciente = st.multiselect("Alergias conhecidas:", ["Nenhuma", "Penicilina", "AINEs", "Sulfa", "Iodo", "Látex", "Outras"])
         comorbidades_paciente = st.multiselect("Comorbidades:", ["Nenhuma", "HAS", "DM", "IRC", "Asma", "Outras"])
         lista_remedios = [v["nome_apresentacao"] for v in banco_medicamentos.values()]
         medicamentos_em_uso = st.multiselect("O que o paciente já toma?", lista_remedios)
 
     if idade_paciente_atual >= 60: score_base += 1
+    if status_imc == "Obesidade": score_base += 1
     if len(medicamentos_em_uso) >= 5: 
         score_base += 2
         st.error("⚠️ **POLIFARMÁCIA DETETADA**")
 
     st.markdown("---")
     if st.button("🔄 Atualizar Sistema", use_container_width=True): st.rerun()
-    st.caption("🚀 Versão 21.0 | Tasy/DEF Standard Edition")
+    st.caption("🚀 Versão 22.0 | Advanced Enterprise Edition")
 
 # ==========================================
-# GESTÃO DE ABAS E PERMISSÕES
+# GESTÃO DE ABAS E PERMISSÕES 
 # ==========================================
 if is_admin: 
-    abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
+    abas = st.tabs(["🚨 Código Azul (AHA)", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema", "📊 Dashboard", "🛡️ Gestão", "📜 Auditoria"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin, aba_dashboard, aba_equipe, aba_auditoria = abas
 elif is_medico:
-    abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
+    abas = st.tabs(["🚨 Código Azul (AHA)", "📋 Prescrição", "👥 Pacientes", "⚙️ Sistema"])
     aba_emergencia, aba_rotina, aba_pacientes, aba_admin = abas
 else: 
-    abas = st.tabs(["🚨 Código Azul", "📋 Prescrição", "👥 Pacientes"])
+    abas = st.tabs(["🚨 Código Azul (AHA)", "📋 Prescrição", "👥 Pacientes"])
     aba_emergencia, aba_rotina, aba_pacientes = abas
 
 # ==========================================
-# ABA 1: EMERGÊNCIA
+# ABA 1: EMERGÊNCIA (PADRÃO AHA/DEF AVANÇADO)
 # ==========================================
 with aba_emergencia:
-    st.markdown("""<style>button[kind="primary"] { height: 100px; border-radius: 12px !important; font-weight: bold !important; font-size: 1.2rem !important; }</style>""", unsafe_allow_html=True)
-    if peso_paciente >= 40.0:
-        st.error(f"🚨 **PROTOCOLO ADULTO** | Peso base: **{peso_paciente} kg**")
-        c1, c2 = st.columns(2)
-        if c1.button("🚨 ADRENALINA", use_container_width=True, type="primary"): st.success("✅ 1 mg (1 ampola) | Flush 20ml SF")
-        if c2.button("🫀 AMIODARONA", use_container_width=True, type="primary"): st.success("✅ 300 mg (2 ampolas) | SG 5%")
-    else:
-        st.warning(f"🧸 **PROTOCOLO PEDIÁTRICO** | Peso base: **{peso_paciente} kg**")
-        c1, c2 = st.columns(2)
-        if c1.button("🚨 ADRENALINA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*0.01, 2)} mg")
-        if c2.button("🫀 AMIODARONA Ped.", use_container_width=True, type="primary"): st.success(f"✅ {round(peso_paciente*5.0, 2)} mg")
+    st.markdown("""<style>button[kind="primary"] { height: 60px; border-radius: 8px !important; font-weight: bold !important; font-size: 1.1rem !important; }</style>""", unsafe_allow_html=True)
+    st.error("🚨 PROTOCOLO DE PARADA CARDIORRESPIRATÓRIA (PCR) - DIRETRIZES AHA")
+    
+    is_adulto = peso_paciente >= 40.0
+    st.info(f"**Paciente:** {'Adulto' if is_adulto else 'Pediátrico'} | **Peso:** {peso_paciente} kg | **Vias Preferenciais:** Acesso IV periférico ou Intraósseo (IO).")
+
+    col_chocavel, col_nao_chocavel = st.columns(2)
+
+    with col_chocavel:
+        with st.container(border=True):
+            st.markdown("### ⚡ RITMOS CHOCÁVEIS")
+            st.caption("Fibrilação Ventricular (FV) / Taquicardia Ventricular sem pulso (TVsp)")
+            
+            st.markdown("**1º Fármaco - Vasopressor:**")
+            if st.button("💉 EPINEFRINA (Adrenalina)", use_container_width=True, type="primary"):
+                if is_adulto: st.success("✅ **DOSE:** 1 mg (1 ampola de 1mg/ml)\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n💧 **Preparo/Enfermagem:** Administrar em Bolus IV rápido, seguido de Flush de 20ml de SF 0,9% e elevação do membro por 10 a 20 segundos.")
+                else: st.success(f"✅ **DOSE PEDIÁTRICA (0.01 mg/kg):** {round(peso_paciente * 0.01, 2)} mg\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n💧 **Preparo:** Concentração padrão 1:10.000 (0.1 mg/mL).")
+            
+            st.markdown("**2º Fármaco - Antiarrítmico:**")
+            if st.button("🫀 AMIODARONA", use_container_width=True, type="primary"):
+                if is_adulto: st.success("✅ **1ª DOSE:** 300 mg (2 ampolas) em Bolus.\n\n✅ **2ª DOSE:** 150 mg (1 ampola) após 3-5 min se FV/TVsp persistir.\n\n💧 **Preparo/Enfermagem:** Pode ser diluído em 20ml a 30ml de SG 5% (Evitar SF 0,9%).")
+                else: st.success(f"✅ **DOSE PEDIÁTRICA (5 mg/kg):** {round(peso_paciente * 5.0, 2)} mg em bolus.\n\n🔄 Pode repetir até 3 vezes.")
+                
+            if st.button("🩸 LIDOCAÍNA (Alternativa)", use_container_width=True):
+                if is_adulto: st.success(f"✅ **DOSE (1 a 1.5 mg/kg):** {round(peso_paciente * 1.0, 1)} a {round(peso_paciente * 1.5, 1)} mg na 1ª dose.\n\n🔄 Se necessário: 0.5 a 0.75 mg/kg a cada 5-10 min.")
+                else: st.success(f"✅ **DOSE PEDIÁTRICA:** 1 mg/kg ({round(peso_paciente * 1.0, 1)} mg).")
+
+    with col_nao_chocavel:
+        with st.container(border=True):
+            st.markdown("### 📉 RITMOS NÃO-CHOCÁVEIS")
+            st.caption("Assistolia / Atividade Elétrica Sem Pulso (AESP)")
+            
+            st.markdown("**Fármaco Principal:**")
+            if st.button("💉 EPINEFRINA (Imediata)", key="epi_nc", use_container_width=True, type="primary"):
+                if is_adulto: st.success("✅ **DOSE:** 1 mg (1 ampola de 1mg/ml)\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n⚠️ Em Assistolia/AESP, administrar o mais rápido possível.")
+                else: st.success(f"✅ **DOSE PEDIÁTRICA:** {round(peso_paciente * 0.01, 2)} mg.")
+            
+            st.markdown("**Tratamento de Bradicardia Sintomática:**")
+            if st.button("🐢 ATROPINA", use_container_width=True):
+                if is_adulto: st.success("✅ **DOSE:** 1 mg em bolus IV.\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n🛑 **Dose Máxima Acumulada:** 3 mg.")
+                else: st.success(f"✅ **DOSE PEDIÁTRICA:** 0.02 mg/kg ({round(peso_paciente * 0.02, 2)} mg).\n\n🛑 Dose mínima: 0.1 mg. Dose máxima: 0.5 mg.")
 
 # ==========================================
-# ABA 2: PRESCRIÇÃO (COM INFORMAÇÕES CLÍNICAS TASY)
+# ABA 2: PRESCRIÇÃO E INFORMAÇÕES TASY
 # ==========================================
 with aba_rotina:
     if banco_medicamentos:
@@ -376,13 +429,12 @@ with aba_rotina:
                     vias = vias_bruto if isinstance(vias_bruto, list) else [str(vias_bruto)]
                     st.caption(f"🛣️ Vias: {', '.join(vias).title()} | 🔬 Classe: {dados.get('classe_terapeutica', 'N/A')}")
                     
-                    # NOVO: PAINEL DE INFORMAÇÕES CLÍNICAS (PADRÃO DEF/TASY)
                     with st.expander("📚 Informações Clínicas (Padrão DEF/Tasy)", expanded=False):
                         st.write(f"**Ação Esperada:** {dados.get('acao_esperada', 'Não informada')}")
                         efeitos = dados.get('efeitos_adversos', [])
                         st.write(f"**Principais Efeitos Adversos:** {', '.join(efeitos) if efeitos else 'Não informados'}")
                         if dados.get('tipo_diluicao'):
-                            st.info(f"💧 **Recomendação de Preparo/Diluição:** {dados.get('tipo_diluicao')}")
+                            st.info(f"💧 **Recomendação de Preparo/Diluição (Enfermagem):** {dados.get('tipo_diluicao')}")
 
                     nome_norm = normalizar_medicamento(dados['nome_apresentacao'])
                     alergia_critica = False
@@ -467,29 +519,28 @@ with aba_rotina:
                                         salvar_cache_ia(chave_risco, res.text)
                                         st.info(f"**🤖 Parecer IA:**\n\n{res.text}")
                                     except: 
-                                        st.error("⏳ Limite de consultas da API Google atingido. Aguarde 1 minuto.")
+                                        st.error("⏳ Limite de consultas da API atingido.")
                             else: st.warning("Serviço de IA Offline.")
 
                     st.divider()
 
-                    if medicamentos_em_uso or alergias_paciente or comorbidades_paciente:
-                        chave_holistica = f"holistico_{dados['nome_apresentacao']}_{'_'.join(medicamentos_em_uso)}_{'_'.join(alergias_paciente)}_{'_'.join(comorbidades_paciente)}"
+                    if medicamentos_em_uso or alergias_paciente or comorbidades_paciente or status_imc == "Obesidade":
+                        chave_holistica = f"holistico_{dados['nome_apresentacao']}_{'_'.join(medicamentos_em_uso)}_{'_'.join(alergias_paciente)}_{'_'.join(comorbidades_paciente)}_{status_imc}"
                         
                         if st.button("🧠 Revisão Holística da Prescrição (IA)", use_container_width=True):
                             resposta_hol_cache = buscar_cache_ia(chave_holistica)
-                            
                             if resposta_hol_cache:
-                                st.success(f"**Análise Global Integrada (Memória Rápida):**\n\n{resposta_hol_cache}")
+                                st.success(f"**Análise Global Integrada:**\n\n{resposta_hol_cache}")
                             else:
                                 if model:
-                                    with st.spinner("A analisar o quadro sistémico completo via API..."):
-                                        prompt_holistico = f"Paciente usa: {', '.join(medicamentos_em_uso) if medicamentos_em_uso else 'Nenhum'}. Alergias: {', '.join(alergias_paciente) if alergias_paciente else 'Nenhuma'}. Comorbidades: {', '.join(comorbidades_paciente) if comorbidades_paciente else 'Nenhuma'}. Nova medicação proposta: {dados['nome_apresentacao']}. Faça uma análise clínica HOLÍSTICA num parágrafo avaliando se essa nova medicação é segura frente a todo o quadro clínico, identificando potenciais choques alérgicos ou contraindicações de doenças base."
+                                    with st.spinner("A analisar o quadro sistêmico completo via API..."):
+                                        prompt_holistico = f"Paciente usa: {', '.join(medicamentos_em_uso) if medicamentos_em_uso else 'Nenhum'}. Alergias: {', '.join(alergias_paciente) if alergias_paciente else 'Nenhuma'}. Comorbidades: {', '.join(comorbidades_paciente) if comorbidades_paciente else 'Nenhuma'}. Status Corporal: {status_imc} (IMC: {imc_atual:.1f}). Nova medicação proposta: {dados['nome_apresentacao']}. Faça uma análise clínica HOLÍSTICA num parágrafo avaliando se essa nova medicação é segura, considerando especialmente a biometria (obesidade) para ajustes de dose lipofílica/hidrofílica."
                                         try: 
                                             res_hol = model.generate_content(prompt_holistico, safety_settings=FILTROS_SEGURANCA)
                                             salvar_cache_ia(chave_holistica, res_hol.text)
                                             st.success(f"**Análise Global Integrada:**\n\n{res_hol.text}")
                                         except: 
-                                            st.error("⏳ Limite de consultas da API Google atingido. Aguarde 1 minuto.")
+                                            st.error("⏳ Limite de consultas da API atingido.")
                                 log_acao(st.session_state['id_usuario_logado'], "Solicitou Revisão Holística Avançada.")
                         st.divider()
 
@@ -523,7 +574,7 @@ with aba_rotina:
     else: st.info("A base de dados de medicamentos está vazia.")
 
 # ==========================================
-# ABA 3: PACIENTES 
+# ABA 3: PACIENTES (COM BIOMETRIA AVANÇADA)
 # ==========================================
 with aba_pacientes:
     c_add_edit, c_del = st.columns(2)
@@ -537,9 +588,10 @@ with aba_pacientes:
             
             if modo_paciente == "Nova Admissão":
                 n = st.text_input("Nome Completo do Paciente:")
-                col_id, col_ps = st.columns(2)
+                col_id, col_ps, col_alt = st.columns(3)
                 id_p = col_id.number_input("Idade:", 0, 120, 30)
                 ps_p = col_ps.number_input("Peso (kg):", 1.0, 250.0, 70.0)
+                alt_p = col_alt.number_input("Altura (m):", 0.5, 2.5, 1.70, 0.01)
                 
                 alergias_sel = st.multiselect("Alergias Conhecidas:", LISTA_ALERGIAS, default=["Nenhuma"])
                 comorbidades_sel = st.multiselect("Comorbidades / Doenças Base:", LISTA_COMORBIDADES, default=["Nenhuma"])
@@ -554,7 +606,7 @@ with aba_pacientes:
                         
                         id_pac = n.lower().replace(" ", "_")
                         dados_novos = {
-                            "nome": n, "idade": id_p, "peso": ps_p, 
+                            "nome": n, "idade": id_p, "peso": ps_p, "altura": alt_p,
                             "alergias": alergias_sel, "comorbidades": comorbidades_sel,
                             "uso_continuo": meds, "criado_por": st.session_state['usuario_logado']
                         }
@@ -628,13 +680,13 @@ Chaves obrigatórias:
 "efeitos_adversos" (lista de strings: principais reações),
 "vias_permitidas" (lista: rotas reais no Brasil),
 "unidade_medida" (string: ml/compr/ampola),
-"tipo_diluicao" (string/null: instrução breve de preparo, ex 'Diluir em 100ml de SF 0.9%'),
+"tipo_diluicao" (string/null: instrução breve de preparo e reconstituição, ex 'Diluir em 100ml de SF 0.9%. Tempo de infusão 30 min.'),
 "alerta_iv" (string/null),
 "concentracao_mg_ml" (float/null),
 "dose_mg_kg" (float/null),
 "dose_maxima_diaria_mg" (float ou 0),
-"interacoes_graves" (lista de principios ativos),
-"interacoes_moderadas" (lista de principios ativos)"""
+"interacoes_graves" (lista de principios ativos em minúsculas),
+"interacoes_moderadas" (lista de principios ativos em minúsculas)"""
                             try:
                                 res = model.generate_content(prompt, safety_settings=FILTROS_SEGURANCA)
                                 texto_limpo = res.text.replace('```json', '').replace('```', '').strip()
