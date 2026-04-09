@@ -105,7 +105,7 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS (V24 - PRÁTICO)
+# GESTÃO DE BASE DE DADOS 
 # ==========================================
 DB_FILE = 'medsync_v24.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
@@ -346,7 +346,7 @@ with st.sidebar:
         st.session_state['cargo_usuario'] = None
         st.rerun()
         
-    st.caption("🚀 Versão 24.0 | Smart Prescription UI")
+    st.caption("🚀 Versão 24.1 | Golden Master Final")
 
 # ==========================================
 # GESTÃO DE ABAS E PERMISSÕES 
@@ -400,7 +400,7 @@ with aba_emergencia:
                     if is_adulto: st.success("✅ **1ª DOSE:** 300 mg (2 ampolas) em Bolus.\n\n✅ **2ª DOSE:** 150 mg (1 ampola) após 3-5 min se FV/TVsp persistir.\n\n💧 **Preparo/Enfermagem:** Pode ser diluído em 20ml a 30ml de SG 5% (Evitar SF 0,9%).")
                     else: st.success(f"✅ **DOSE PEDIÁTRICA (5 mg/kg):** {round(peso_paciente * 5.0, 2)} mg em bolus.\n\n🔄 Pode repetir até 3 vezes.")
                     
-                if st.button("🩸 CLORIDRATO DE LIDOCAÍNA (Alternativa)", use_container_width=True):
+                if st.button("🩸 CLORIDRATO DE LIDOCAÍNA (Alternativa)", use_container_width=True, type="primary"):
                     if is_adulto: st.success(f"✅ **DOSE (1 a 1.5 mg/kg):** {round(peso_paciente * 1.0, 1)} a {round(peso_paciente * 1.5, 1)} mg na 1ª dose.\n\n🔄 Se necessário: 0.5 a 0.75 mg/kg a cada 5-10 min.")
                     else: st.success(f"✅ **DOSE PEDIÁTRICA:** 1 mg/kg ({round(peso_paciente * 1.0, 1)} mg).")
 
@@ -415,7 +415,7 @@ with aba_emergencia:
                     else: st.success(f"✅ **DOSE PEDIÁTRICA:** {round(peso_paciente * 0.01, 2)} mg.")
                 
                 st.markdown("**Tratamento de Bradicardia Sintomática:**")
-                if st.button("🐢 SULFATO DE ATROPINA", use_container_width=True):
+                if st.button("🐢 SULFATO DE ATROPINA", use_container_width=True, type="primary"):
                     if is_adulto: st.success("✅ **DOSE:** 1 mg em bolus IV.\n\n🔄 **Frequência:** A cada 3 a 5 minutos.\n\n🛑 **Dose Máxima Acumulada:** 3 mg.")
                     else: st.success(f"✅ **DOSE PEDIÁTRICA:** 0.02 mg/kg ({round(peso_paciente * 0.02, 2)} mg).\n\n🛑 Dose mínima: 0.1 mg. Dose máxima: 0.5 mg.")
 
@@ -425,9 +425,9 @@ with aba_emergencia:
         if c1.button("💉 EPINEFRINA INTRAMUSCULAR", use_container_width=True, type="primary"):
             if is_adulto: st.success("✅ **DOSE:** 0.3 a 0.5 mg IM (músculo vasto lateral da coxa).\n\n🔄 **Frequência:** Repetir a cada 5 a 15 minutos se não houver melhora clínica.")
             else: st.success(f"✅ **DOSE PEDIÁTRICA (0.01 mg/kg):** {round(peso_paciente * 0.01, 2)} mg IM (máximo 0.3 mg/dose).")
-        if c2.button("💊 CLORIDRATO DE PROMETAZINA", use_container_width=True):
+        if c2.button("💊 CLORIDRATO DE PROMETAZINA", use_container_width=True, type="primary"):
             st.success("✅ **DOSE (Anti-histamínico H1):** 25 a 50 mg IM profundo ou IV lento (diluído).\n\n⚠️ **Atenção:** Apenas como terapia adjuvante, nunca substitui a Epinefrina.")
-        if c3.button("🧪 SUCCINATO SÓDICO DE HIDROCORTISONA", use_container_width=True):
+        if c3.button("🧪 SUCCINATO SÓDICO DE HIDROCORTISONA", use_container_width=True, type="primary"):
             if is_adulto: st.success("✅ **DOSE (Corticoide):** 200 a 500 mg IV lento.\n\n⚠️ **Objetivo:** Prevenir fase tardia/bifásica da anafilaxia.")
             else: st.success(f"✅ **DOSE PEDIÁTRICA (5-10 mg/kg):** {round(peso_paciente * 5.0, 1)} a {round(peso_paciente * 10.0, 1)} mg IV.")
 
@@ -436,11 +436,11 @@ with aba_emergencia:
         c1, c2 = st.columns(2)
         if c1.button("💊 ÁCIDO ACETILSALICÍLICO (AAS)", use_container_width=True, type="primary"):
             st.success("✅ **DOSE DE ATAQUE:** 160 a 325 mg (Mastigar e engolir).\n\n⚠️ **Contraindicação:** Alergia a AAS, sangramento ativo ou úlcera péptica ativa.")
-        if c1.button("🌬️ OXIGENIOTERAPIA", use_container_width=True):
+        if c1.button("🌬️ OXIGENIOTERAPIA", use_container_width=True, type="primary"):
             st.success("✅ **INDICAÇÃO:** Apenas se SatO2 < 90% ou paciente com dispneia/insuficiência cardíaca.\n\n💧 **Método:** Cateter nasal 2-4 L/min.")
         if c2.button("🩸 NITRATO (Nitroglicerina/Isossorbida)", use_container_width=True, type="primary"):
             st.success("✅ **DOSE SUBLINGUAL:** 5 mg sob a língua.\n\n🔄 **Frequência:** A cada 5 minutos (Máximo 3 doses).\n\n🛑 **Atenção:** Evitar se PAS < 90 mmHg, IAM de Ventrículo Direito ou uso recente de inibidores da fosfodiesterase (ex: Sildenafila).")
-        if c2.button("💉 SULFATO DE MORFINA", use_container_width=True):
+        if c2.button("💉 SULFATO DE MORFINA", use_container_width=True, type="primary"):
             st.success("✅ **DOSE:** 2 a 4 mg IV lento.\n\n🔄 **Frequência:** A cada 5 a 15 minutos até alívio da dor.\n\n⚠️ **Atenção:** Usar com cautela; pode mascarar sintomas isquêmicos e causar hipotensão.")
 
     elif protocolo == "🧠 Crise Convulsiva (Mal Epiléptico)":
@@ -589,9 +589,7 @@ with aba_rotina:
                                 log_acao(st.session_state['id_usuario_logado'], "Solicitou Revisão Holística Avançada.")
                         st.divider()
 
-                    # ==========================================
-                    # RECEITUÁRIO INTELIGENTE (COPY & PASTE)
-                    # ==========================================
+                    # RECEITUÁRIO INTELIGENTE
                     if permitir_prescricao:
                         st.markdown("#### 📝 Cálculo de Dose e Receituário")
                         unid_bruto = dados.get("unidade_medida", "ML")
@@ -627,13 +625,12 @@ with aba_rotina:
                         if st.button("Calcular Vazão", use_container_width=True):
                             gts = math.ceil(vol/(tmp*3)) if un_t=="Horas" else math.ceil((vol*20)/tmp)
                             st.metric("Velocidade de Infusão", f"{gts} gts/min")
-                            # Adiciona o cálculo ao receituário também!
                             st.caption("Adicionar instrução à prescrição:")
                             st.code(f"Diluir em {vol}ml e correr a {gts} gotas/min.", language="text")
     else: st.info("A base de dados de medicamentos está vazia.")
 
 # ==========================================
-# ABA 3: PACIENTES (COM BIOMETRIA AVANÇADA)
+# ABA 3: PACIENTES 
 # ==========================================
 with aba_pacientes:
     c_add_edit, c_del = st.columns(2)
