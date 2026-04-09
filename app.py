@@ -105,9 +105,9 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS 
+# GESTÃO DE BASE DE DADOS (V25 - CLEAN CACHE TOTAL)
 # ==========================================
-DB_FILE = 'medsync_v24.db'
+DB_FILE = 'medsync_v25.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -346,7 +346,7 @@ with st.sidebar:
         st.session_state['cargo_usuario'] = None
         st.rerun()
         
-    st.caption("🚀 Versão 24.1 | Golden Master Final")
+    st.caption("🚀 Versão 25.0 | Golden Master Final")
 
 # ==========================================
 # GESTÃO DE ABAS E PERMISSÕES 
@@ -630,7 +630,7 @@ with aba_rotina:
     else: st.info("A base de dados de medicamentos está vazia.")
 
 # ==========================================
-# ABA 3: PACIENTES 
+# ABA 3: PACIENTES (COM BIOMETRIA AVANÇADA)
 # ==========================================
 with aba_pacientes:
     c_add_edit, c_del = st.columns(2)
