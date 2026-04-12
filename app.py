@@ -89,13 +89,16 @@ SINONIMOS = {
     "adrenalina": "epinefrina"
 }
 
+# Banco atualizado com dupla verificação (Simétrico)
 INTERACOES_FIXAS_GRAVES = {
     "ciclosporina": ["dipirona", "ibuprofeno", "cetoprofeno", "diclofenaco"],
     "clorpromazina": ["dipirona"],
     "dipirona": ["ciclosporina", "clorpromazina"],
-    "ibuprofeno": ["cetoprofeno", "ciclosporina", "aspirina"],
-    "cetoprofeno": ["ibuprofeno", "ciclosporina", "aspirina"],
-    "varfarina": ["ibuprofeno", "cetoprofeno", "aspirina", "diclofenaco"]
+    "ibuprofeno": ["cetoprofeno", "ciclosporina", "aspirina", "varfarina"],
+    "cetoprofeno": ["ibuprofeno", "ciclosporina", "aspirina", "varfarina"],
+    "varfarina": ["ibuprofeno", "cetoprofeno", "aspirina", "diclofenaco"],
+    "diclofenaco": ["ciclosporina", "varfarina"],
+    "aspirina": ["ibuprofeno", "cetoprofeno", "varfarina"]
 }
 
 def normalizar_medicamento(nome):
@@ -105,9 +108,9 @@ def normalizar_medicamento(nome):
     return SINONIMOS.get(n, n)
 
 # ==========================================
-# GESTÃO DE BASE DE DADOS (V25 - CLEAN CACHE TOTAL)
+# GESTÃO DE BASE DE DADOS (V25.1)
 # ==========================================
-DB_FILE = 'medsync_v25.db'
+DB_FILE = 'medsync_v25_1.db'
 FILTROS_SEGURANCA = { 'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE' }
 
 def hash_senha(senha):
@@ -346,7 +349,7 @@ with st.sidebar:
         st.session_state['cargo_usuario'] = None
         st.rerun()
         
-    st.caption("🚀 Versão 25.0 | Golden Master Final")
+    st.caption("🚀 Versão 25.1 | Smart Text Matching")
 
 # ==========================================
 # GESTÃO DE ABAS E PERMISSÕES 
@@ -481,11 +484,18 @@ with aba_rotina:
                         if dados.get('tipo_diluicao'):
                             st.info(f"💧 **Recomendação de Preparo/Diluição (Enfermagem):** {dados.get('tipo_diluicao')}")
 
+                    # ==========================================
+                    # NOVO MOTOR DE ANÁLISE DE SEGURANÇA (SUBSTRING MATCH)
+                    # ==========================================
                     nome_norm = normalizar_medicamento(dados['nome_apresentacao'])
                     alergia_critica = False
                     
                     for alergia in alergias_paciente:
-                        if nome_norm in normalizar_medicamento(alergia) or ("AINEs" in alergia and nome_norm in ["dipirona", "ibuprofeno", "cetoprofeno"]):
+                        alergia_norm = normalizar_medicamento(alergia)
+                        if alergia_norm in nome_norm or nome_norm in alergia_norm:
+                            st.error(f"❌ **CHOQUE ANAFILÁTICO POSSÍVEL:** Paciente reporta alergia a {alergia}!")
+                            alergia_critica = True
+                        elif "aines" in alergia_norm and any(aine in nome_norm for aine in ["dipirona", "ibuprofeno", "cetoprofeno", "diclofenaco", "aspirina"]):
                             st.error(f"❌ **CHOQUE ANAFILÁTICO POSSÍVEL:** Paciente reporta alergia a {alergia}!")
                             alergia_critica = True
                     
@@ -500,7 +510,12 @@ with aba_rotina:
                     else:
                         ia_graves = [normalizar_medicamento(i) for i in dados.get("interacoes_graves", [])]
                         ia_moderadas = [normalizar_medicamento(i) for i in dados.get("interacoes_moderadas", [])]
-                        banco_fixo_graves = INTERACOES_FIXAS_GRAVES.get(nome_norm, [])
+                        
+                        banco_fixo_graves = []
+                        for key, interacoes in INTERACOES_FIXAS_GRAVES.items():
+                            if key in nome_norm:
+                                banco_fixo_graves.extend(interacoes)
+                                
                         todas_graves = list(set(ia_graves + banco_fixo_graves))
                         
                         conflitos_graves_encontrados = []
@@ -508,13 +523,35 @@ with aba_rotina:
                         
                         for remedio_uso in medicamentos_em_uso:
                             uso_norm = normalizar_medicamento(remedio_uso)
-                            if uso_norm in todas_graves:
+                            
+                            is_grave = False
+                            # Verifica se a contraindicação está dentro do nome do remédio em uso
+                            for grave in todas_graves:
+                                if grave and (grave in uso_norm or uso_norm in grave):
+                                    is_grave = True
+                                    break
+                            
+                            # Verifica a via de mão dupla do banco de dados fixo
+                            for key, interacoes in INTERACOES_FIXAS_GRAVES.items():
+                                if key in uso_norm:
+                                    for interacao in interacoes:
+                                        if interacao in nome_norm:
+                                            is_grave = True
+                                            break
+
+                            if is_grave:
                                 conflitos_graves_encontrados.append(remedio_uso)
-                            elif uso_norm in ia_moderadas:
-                                conflitos_moderados_encontrados.append(remedio_uso)
+                            else:
+                                is_moderada = False
+                                for mod in ia_moderadas:
+                                    if mod and (mod in uso_norm or uso_norm in mod):
+                                        is_moderada = True
+                                        break
+                                if is_moderada:
+                                    conflitos_moderados_encontrados.append(remedio_uso)
 
                         if conflitos_graves_encontrados: 
-                            st.error(f"🛑 **GRAVE:** Risco severo com {', '.join(conflitos_graves_encontrados)}.")
+                            st.error(f"🛑 **GRAVE:** Risco severo de hemorragia/toxicidade com {', '.join(conflitos_graves_encontrados)}.")
                             st.error("🔒 **AÇÃO BLOQUEADA:** Risco iminente de evento adverso grave.")
                             score_interacao = 3
                             permitir_prescricao = False 
